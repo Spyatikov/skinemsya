@@ -529,7 +529,7 @@ function heroHTML(){
         <p class="lbl">${st[1]}</p>
         <p class="big num ${st[0]}">${st[2]}${inBase(Math.abs(mine) > 1 ? Math.abs(mine) : 0)}</p>
       </div>
-      <dl class="facts num"><div><dt>Все расходы</dt><dd>${inBase(spent)}</dd></div><div><dt>Твоя доля</dt><dd>${inBase(myShare)}</dd></div><div><dt>В группе</dt><dd>${MB.length} ${plural(MB.length,'человек','человека','человек')}</dd></div></dl>
+      <dl class="facts num"><div><dt>Все расходы</dt><dd>${inBase(spent)}</dd></div><div><dt>Твоя доля</dt><dd>${inBase(myShare)}</dd></div><div><dt>В группе</dt><dd>${MB.length} чел.</dd></div></dl>
     </section>
     <div class="acts">
       <button class="act" data-act="scan">${ACT_ICONS.scan}Скан чека</button>
