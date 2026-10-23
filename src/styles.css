@@ -303,3 +303,8 @@ img.av{object-fit:cover;background:var(--sunk)}
 .link-row{display:flex;gap:8px}
 .link-row .invite{flex:1;min-width:0}
 .memberrow img,.memberrow .av{flex:none}
+.helprow{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px 14px;margin-top:4px}
+.helprow>span:nth-child(2){flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.helprow small{color:var(--muted);font-size:13px}
+.helprow .chev{width:18px;height:18px;color:var(--muted);flex:none}
+textarea.text{min-height:110px;line-height:1.4}

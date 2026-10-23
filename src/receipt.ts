@@ -1,4 +1,5 @@
 // Распознавание чека в браузере (Tesseract.js, языки rus+eng) и разбор строк в позиции.
+import { call } from "./api";
 import { parseAmount, type ReceiptItem } from "./money";
 
 declare global {
@@ -79,4 +80,39 @@ export function parseReceipt(text: string): ParsedReceipt {
   }
   // если итог на чеке меньше суммы позиций, лишние строки — скорее всего мусор; оставляем как есть, человек поправит
   return { place, items, total, service };
+}
+
+// ---------- ИИ-распознавание на сервере ----------
+async function toJpegBase64(file: Blob, max = 1600): Promise<string> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error("Не удалось открыть фото")); i.src = url; });
+    const k = Math.min(1, max / Math.max(img.width, img.height));
+    const c = document.createElement("canvas");
+    c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+    c.getContext("2d")!.drawImage(img, 0, 0, c.width, c.height);
+    return c.toDataURL("image/jpeg", 0.85).split(",")[1];
+  } finally { URL.revokeObjectURL(url); }
+}
+type AiReceipt = {
+  place?: string; currency?: string | null; confidence?: "high" | "medium" | "low";
+  items?: { name: string; name_ru?: string; quantity?: number; line_total: number }[];
+  service_and_tax?: number; discount?: number; total?: number | null;
+};
+export type ScanResult = ParsedReceipt & { currency: string | null; confidence: "high" | "medium" | "low"; ai: boolean };
+
+export async function recognizeAI(file: Blob): Promise<ScanResult> {
+  const image = await toJpegBase64(file);
+  const r = await call<AiReceipt>("scanReceipt", { image, mediaType: "image/jpeg" });
+  const items: ReceiptItem[] = (r.items ?? [])
+    .filter((i) => Number(i.line_total) > 0)
+    .map((i) => {
+      const nm = (i.name_ru && i.name_ru !== i.name ? i.name_ru : i.name) || "Позиция";
+      const q = Number(i.quantity) > 1 ? ` ×${Number(i.quantity)}` : "";
+      return { name: (nm + q).slice(0, 60), price: Math.round(Number(i.line_total) * 100) / 100, who: [] };
+    });
+  const sum = items.reduce((s, i) => s + i.price, 0);
+  const service = Math.max(0, Number(r.service_and_tax) || 0) - Math.max(0, Number(r.discount) || 0);
+  const total = r.total && r.total > 0 ? Number(r.total) : sum + service;
+  return { place: r.place ?? "", items, total, service, currency: r.currency ?? null, confidence: r.confidence ?? "medium", ai: true };
 }

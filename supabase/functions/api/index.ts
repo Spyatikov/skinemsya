@@ -1,24 +1,19 @@
 // Скинемся — единая серверная функция.
 // Каждый запрос несёт Telegram initData; функция проверяет подпись токеном бота,
 // обновляет профиль пользователя и выполняет действие от его имени.
-// Секреты (Supabase → Edge Functions → Secrets): TELEGRAM_BOT_TOKEN, APP_LINK (необязательно).
-import { createClient } from "jsr:@supabase/supabase-js@2";
-
-const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") ?? "";
-const APP_LINK = Deno.env.get("APP_LINK") ?? ""; // напр. https://t.me/skinemsya_bot/app
-const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
-  auth: { persistSession: false },
-});
+// Она же принимает вебхук бота (POST с заголовком секрета) и настраивает бота (GET ?setup=1).
+// Секреты (Supabase → Edge Functions → Secrets): TELEGRAM_BOT_TOKEN, ANTHROPIC_API_KEY.
+import { scanReceipt, aiEnabled } from "./ai.ts";
+import { handleUpdate, setupBot, webhookSecret } from "./bot.ts";
+import { ADMIN_ID, BOT_TOKEN, BOT_USERNAME, db, esc, fail, HttpError, money as fmtMoney, postToLinkedChat, tgApi } from "./shared.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "content-type, authorization, apikey, x-client-info",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
 };
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, "content-type": "application/json" } });
-class HttpError extends Error { constructor(public status: number, msg: string) { super(msg); } }
-const fail = (status: number, msg: string): never => { throw new HttpError(status, msg); };
 
 // ---------- проверка initData ----------
 const enc = new TextEncoder();
@@ -60,17 +55,9 @@ async function botMessage(groupId: string, text: string, openFeed = false) {
 }
 // личное сообщение от бота; молча пропускаем, если человек ещё не запускал бота
 async function notify(userId: number, text: string) {
-  if (!BOT_TOKEN) return;
-  const body: Record<string, unknown> = { chat_id: userId, text, parse_mode: "HTML" };
-  if (APP_LINK) body.reply_markup = { inline_keyboard: [[{ text: "Открыть Скинемся", url: APP_LINK }]] };
-  try {
-    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
-    });
-  } catch { /* не критично */ }
+  await tgApi("sendMessage", { chat_id: userId, text, parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "Открыть Скинемся", url: `https://t.me/${BOT_USERNAME}/app` }]] } });
 }
-const esc = (s: string) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]!));
-const money = (n: number) => new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(n) + " ₽";
+const money = (n: number) => fmtMoney(Math.round(n), "RUB");
 
 async function joinByCode(code: string, userId: number) {
   const { data: g } = await db.from("groups").select("id,name").eq("invite_code", code).maybeSingle();
@@ -112,6 +99,19 @@ const pick = <T extends string>(o: Record<string, unknown>, keys: readonly T[]) 
 // ---------- обработчик ----------
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+  const url = new URL(req.url);
+  // настройка бота: вебхук, кнопка меню, команды
+  if (req.method === "GET" && url.searchParams.has("setup")) {
+    const self = `${Deno.env.get("SUPABASE_URL")}/functions/v1/api`;
+    return json(await setupBot(self));
+  }
+  // вебхук Telegram
+  const tgSecret = req.headers.get("x-telegram-bot-api-secret-token");
+  if (tgSecret !== null) {
+    if (!BOT_TOKEN || tgSecret !== await webhookSecret()) return new Response("forbidden", { status: 403 });
+    try { await handleUpdate(await req.json()); } catch (e) { console.error("bot update failed", e); }
+    return new Response("ok");
+  }
   try {
     const { initData, action, ...p } = await req.json();
     const { user, startParam } = await verifyInitData(String(initData ?? ""));
@@ -125,7 +125,7 @@ Deno.serve(async (req) => {
       case "load": {
         let joined: string | null = null;
         if (p.join || startParam) joined = await joinByCode(String(p.join ?? startParam), me);
-        return json({ me, joined, ...(await loadAll(me)) });
+        return json({ me, joined, ai: aiEnabled(), bot: BOT_USERNAME, ...(await loadAll(me)) });
       }
       case "createGroup": {
         const { data, error } = await db.from("groups")
@@ -151,6 +151,9 @@ Deno.serve(async (req) => {
         const { data, error } = await db.from("expenses").insert(row).select("id").single();
         if (error) fail(400, error.message);
         if (p.botText) await botMessage(p.group_id, String(p.botText).slice(0, 2000), true);
+        // сообщаем в привязанный чат Telegram (из чата приложения туда же пишет сам бот)
+        const amt = Number(p.amount), rateV = Number(p.rate);
+        await postToLinkedChat(p.group_id, `🧾 <b>${esc(user.first_name)}</b> добавил(а) «${esc(String(p.title ?? ""))}»: ${fmtMoney(amt, String(p.currency))}${p.currency !== "RUB" ? ` ≈ ${money(amt * rateV)}` : ""}`);
         return json({ id: data!.id });
       }
       case "updateExpense": {
@@ -208,12 +211,49 @@ Deno.serve(async (req) => {
         }
         return json({ ok: true });
       }
+      case "scanReceipt": {
+        return json(await scanReceipt(me, String(p.image ?? ""), String(p.mediaType ?? "image/jpeg")));
+      }
+      case "unlinkChat": {
+        await mustBeMember(p.id, me);
+        const { data: g } = await db.from("groups").select("tg_chat_id,name").eq("id", p.id).single();
+        if (g?.tg_chat_id) {
+          await tgApi("sendMessage", { chat_id: g.tg_chat_id, text: `Чат отключён от группы «${g.name}». Траты отсюда больше не записываются.` });
+          await db.from("groups").update({ tg_chat_id: null, tg_chat_title: null }).eq("id", p.id);
+        }
+        return json({ ok: true });
+      }
+      case "feedback": {
+        const text = String(p.text ?? "").trim().slice(0, 3000);
+        if (text.length < 3) fail(400, "Опиши проблему хотя бы парой слов");
+        const ctx = (p.context ?? {}) as Record<string, string>;
+        const { data: fb } = await db.from("feedback").insert({ user_id: me, group_id: p.group_id ?? null, text, context: ctx }).select("id").single();
+        const who = `${esc(user.first_name)}${user.last_name ? " " + esc(user.last_name) : ""}${user.username ? ` (@${esc(user.username)})` : ""} · <code>${me}</code>`;
+        const head = `🆘 <b>Обращение #${fb?.id ?? ""}</b>\nОт: <a href="tg://user?id=${me}">${who}</a>\n` +
+          (ctx.group ? `Группа: ${esc(ctx.group)}\n` : "") + (ctx.platform ? `Устройство: ${esc(ctx.platform)}\n` : "") +
+          `\n${esc(text)}\n\n<i>Ответь на это сообщение — ответ уйдёт автору.</i>`;
+        let sent;
+        if (p.screenshot) {
+          const bin = Uint8Array.from(atob(String(p.screenshot)), (ch) => ch.charCodeAt(0));
+          const form = new FormData();
+          form.append("chat_id", String(ADMIN_ID)); form.append("caption", head.slice(0, 1024)); form.append("parse_mode", "HTML");
+          form.append("photo", new Blob([bin], { type: "image/jpeg" }), "screenshot.jpg");
+          sent = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, { method: "POST", body: form }).then((r) => r.json()).catch(() => ({ ok: false }));
+          if (head.length > 1024) await tgApi("sendMessage", { chat_id: ADMIN_ID, text: head, parse_mode: "HTML" });
+        } else {
+          sent = await tgApi("sendMessage", { chat_id: ADMIN_ID, text: head, parse_mode: "HTML" });
+        }
+        const msgId = (sent as { result?: { message_id: number } })?.result?.message_id;
+        if (fb && msgId) await db.from("feedback").update({ admin_msg_id: msgId }).eq("id", fb.id);
+        return json({ ok: true });
+      }
       case "sendMessage": {
         await mustBeMember(p.group_id, me);
         const text = String(p.text ?? "").trim().slice(0, 2000);
         if (!text) fail(400, "Пустое сообщение");
         await db.from("messages").insert({ group_id: p.group_id, user_id: me, text });
         if (p.botText) await botMessage(p.group_id, String(p.botText).slice(0, 2000), Boolean(p.openFeed));
+        if (!/^[+/]/.test(text)) await postToLinkedChat(p.group_id, `💬 <b>${esc(user.first_name)}</b> (из приложения): ${esc(text)}`);
         return json({ ok: true });
       }
       default:

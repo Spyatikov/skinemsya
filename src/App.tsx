@@ -3,7 +3,7 @@ import { call, type LoadResult } from "./api";
 import { API_URL } from "./config";
 import { type Expense, type Group, myStats, nets, onN, pairCount, parseAmount, plan, plural, rubOf, shares, type Transfer } from "./money";
 import { CATALOG, inBase, loadRates, money, rateOf, ratesDate, sym } from "./rates";
-import { AddSheet, type Ctx, DetailSheet, GroupSheet, InviteSheet, ScanSheet, type Sheet, defaultCurs } from "./sheets";
+import { AddSheet, type Ctx, DetailSheet, GroupSheet, HelpSheet, InviteSheet, ScanSheet, type Sheet, defaultCurs } from "./sheets";
 import { haptic, inTelegram, initTelegram, tg } from "./telegram";
 import { Avatar, Fly, GroupImg, Ico, catName, dayName, guessCat, relDay, richText, todayISO, tripDates } from "./ui";
 
@@ -85,7 +85,8 @@ export default function App() {
 
   const addCur = (code: string) => { const next = curs.includes(code) ? curs : [...curs, code]; setCurs(next); ls.set("skinemsya-curs", JSON.stringify(next)); };
   const close = () => setSheet(null);
-  const ctx: Ctx | null = g ? { g, me, base, curs, addCur, run, close, open: setSheet, toast } : null;
+  const ai = Boolean(data?.ai);
+  const ctx: Ctx | null = g ? { g, me, base, curs, ai, addCur, run, close, open: setSheet, toast } : null;
 
   // ---------- экраны-заглушки ----------
   if (!inTelegram) return (
@@ -100,7 +101,7 @@ export default function App() {
     ? <Center title="Не получилось загрузить" text={fatal} action={<button className="btn" onClick={() => { setFatal(""); reload(); }}>Попробовать снова</button>} />
     : <main><div className="wrap"><div className="center"><div className="spinner" /><p>Загружаю группы…</p></div></div></main>;
 
-  const groupSheetCtx = ctx ?? { me, base, curs, addCur, run, close, open: setSheet, toast };
+  const groupSheetCtx = ctx ?? { me, base, curs, ai, addCur, run, close, open: setSheet, toast };
 
   return (
     <>
@@ -111,6 +112,7 @@ export default function App() {
           <p>Создай группу для поездки и позови друзей по ссылке. Траты, валюты и долги посчитаются сами.</p>
           <button className="btn" onClick={() => setSheet({ kind: "group", create: true })}>Создать группу</button>
           <p style={{ fontSize: 13 }}>Если друг уже создал группу, попроси у него ссылку-приглашение и открой её.</p>
+          <button className="linkbtn" onClick={() => setSheet({ kind: "help" })}>Помощь</button>
         </div></div></main>
       ) : (
         <>
@@ -122,7 +124,7 @@ export default function App() {
           <main><div className="wrap" id="view">
             {tab === "feed" && <Feed c={ctx!} onTab={setTab} />}
             {tab === "balances" && <Balances c={ctx!} onTab={setTab} />}
-            {tab === "groups" && <Groups groups={groups} active={g.id} me={me} base={base} onPick={(id) => { setActiveId(id); setTab("feed"); window.scrollTo(0, 0); }} onCreate={() => setSheet({ kind: "group", create: true })} />}
+            {tab === "groups" && <Groups groups={groups} active={g.id} me={me} base={base} onPick={(id) => { setActiveId(id); setTab("feed"); window.scrollTo(0, 0); }} onCreate={() => setSheet({ kind: "group", create: true })} onHelp={() => setSheet({ kind: "help" })} />}
             {tab === "chat" && <Chat c={ctx!} onTab={setTab} />}
           </div></main>
           <nav className="tabs" aria-label="Разделы"><div className="wrap">
@@ -143,6 +145,7 @@ export default function App() {
               : ctx && sheet.kind === "scan" ? <ScanSheet key={sheet.edit?.id ?? "new"} c={ctx} edit={sheet.edit} />
               : ctx && sheet.kind === "detail" ? <DetailSheet key={sheet.id} c={ctx} id={sheet.id} />
               : ctx && sheet.kind === "invite" ? <InviteSheet c={ctx} />
+              : sheet.kind === "help" ? <HelpSheet c={groupSheetCtx} />
               : null}
           </section>
         </div>
@@ -269,7 +272,7 @@ function Balances({ c, onTab }: { c: Ctx; onTab: (t: Tab) => void }) {
 }
 
 // ---------- группы ----------
-function Groups({ groups, active, me, base, onPick, onCreate }: { groups: Group[]; active: string; me: number; base: string; onPick: (id: string) => void; onCreate: () => void }) {
+function Groups({ groups, active, me, base, onPick, onCreate, onHelp }: { groups: Group[]; active: string; me: number; base: string; onPick: (id: string) => void; onCreate: () => void; onHelp: () => void }) {
   return (
     <>
       <div className="ghead"><h2>Группы</h2></div>
@@ -285,6 +288,11 @@ function Groups({ groups, active, me, base, onPick, onCreate }: { groups: Group[
       })}</div>
       <button className="btn wide newgroup" onClick={onCreate}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>Создать группу</button>
       <p className="note">Группа — это поездка или любая общая затея: квартира, день рождения, дача.</p>
+      <button className="helprow" onClick={onHelp}>
+        <span className="ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" /><path d="M9.6 9.4a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2-2.4 3.7M12 17h.01" /></svg></span>
+        <span><b>Помощь</b><small>Ответы на вопросы и связь с разработчиком</small></span>
+        <svg className="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 6l6 6-6 6" /></svg>
+      </button>
     </>
   );
 }

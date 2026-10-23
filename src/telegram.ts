@@ -3,6 +3,7 @@ type WebApp = {
   initData: string;
   initDataUnsafe: { user?: { id: number; first_name: string; photo_url?: string }; start_param?: string };
   colorScheme: "light" | "dark";
+  platform?: string; version?: string;
   themeParams: Record<string, string>;
   ready(): void; expand(): void;
   setHeaderColor(c: string): void; setBackgroundColor(c: string): void; setBottomBarColor?(c: string): void;

@@ -2,7 +2,7 @@ import { API_URL, SUPABASE_ANON_KEY } from "./config";
 import { tg } from "./telegram";
 import type { Group } from "./money";
 
-export type LoadResult = { me: number; joined: string | null; groups: Group[] };
+export type LoadResult = { me: number; joined: string | null; groups: Group[]; ai?: boolean; bot?: string };
 
 export async function call<T = { ok: true }>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
   if (!API_URL) throw new Error("Сервер ещё не настроен: не задан адрес API.");

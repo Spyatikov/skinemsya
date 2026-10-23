@@ -1,14 +1,14 @@
 // Шторки: новый/изменение расхода, скан чека, детали траты, настройки группы, приглашение.
 import { useMemo, useRef, useState } from "react";
-import { inviteLink } from "./config";
+import { BOT_USERNAME, inviteLink } from "./config";
 import { type Expense, type Group, type ReceiptItem, type Split, nf, onN, parseAmount, plural, rubOf, shares } from "./money";
-import { CATALOG, DEFAULT_CURS, inBase, money, rateLabel, rateOf, sym } from "./rates";
-import { parseReceipt, recognize } from "./receipt";
-import { shareLink } from "./telegram";
+import { CATALOG, CUR, DEFAULT_CURS, inBase, money, rateLabel, rateOf, sym } from "./rates";
+import { parseReceipt, recognize, recognizeAI } from "./receipt";
+import { shareLink, tg } from "./telegram";
 import { Avatar, CATS, Fly, GroupImg, Ico, Pen, SheetHead, catName, dayName, guessCat, todayISO } from "./ui";
 
 export type Ctx = {
-  g: Group; me: number; base: string; curs: string[];
+  g: Group; me: number; base: string; curs: string[]; ai: boolean;
   addCur: (c: string) => void;
   run: (action: string, payload: Record<string, unknown>, ok?: string) => Promise<boolean>;
   close: () => void;
@@ -20,7 +20,8 @@ export type Sheet =
   | { kind: "scan"; edit?: Expense }
   | { kind: "detail"; id: string }
   | { kind: "group"; create?: boolean }
-  | { kind: "invite" };
+  | { kind: "invite" }
+  | { kind: "help" };
 
 const name = (c: Ctx, id: number | null) => (id === c.me ? "Ты" : c.g.members.find((m) => m.id === id)?.first_name ?? "Кто-то");
 const prof = (c: Ctx, id: number | null) => c.g.members.find((m) => m.id === id);
@@ -164,6 +165,27 @@ export function ScanSheet({ c, edit }: { c: Ctx; edit?: Expense }) {
   async function onFile(f: File | undefined) {
     if (!f) return;
     setImg(URL.createObjectURL(f)); setErr(""); setStep("ocr");
+    let note = "";
+    // сначала ИИ на сервере, если он настроен; при сбое — распознавание на телефоне
+    if (c.ai) {
+      setProgress({ p: 0.35, stage: "ИИ читает чек" });
+      const tick = window.setInterval(() => setProgress((x) => ({ ...x, p: Math.min(0.92, x.p + 0.04) })), 600);
+      try {
+        const r = await recognizeAI(f);
+        window.clearInterval(tick);
+        setItems(r.items); setPrices(r.items.map((i) => String(i.price)));
+        setPlace(r.place);
+        if (r.currency && CUR[r.currency]) { setCur(r.currency); if (!c.curs.includes(r.currency)) c.addCur(r.currency); }
+        setTotal(r.total ? String(Math.round(r.total * 100) / 100) : "");
+        if (!r.items.length) setErr("ИИ не нашёл позиции на фото. Добавь их вручную или сфотографируй чек ровнее и ближе.");
+        else if (r.confidence === "low") setErr("Чек читается плохо: проверь названия и цены.");
+        setStep("items");
+        return;
+      } catch (e) {
+        window.clearInterval(tick);
+        note = (e as Error).message;
+      }
+    }
     try {
       const text = await recognize(f, (p, stage) => setProgress({ p, stage }));
       const r = parseReceipt(text);
@@ -171,7 +193,8 @@ export function ScanSheet({ c, edit }: { c: Ctx; edit?: Expense }) {
       setItems(r.items); setPrices(r.items.map((i) => String(i.price)));
       setPlace(r.place);
       setTotal(String(r.total && r.total >= sum ? r.total : sum + r.service || ""));
-      if (!r.items.length) setErr("Не нашла позиции на фото. Добавь их вручную или попробуй сфотографировать чек ровнее и ближе.");
+      if (!r.items.length) setErr("Не нашли позиции на фото. Добавь их вручную или попробуй сфотографировать чек ровнее и ближе.");
+      else if (note) setErr(`${note} Распознали на телефоне, проверь позиции внимательнее.`);
       setStep("items");
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Не удалось распознать чек"); setStep("pick");
@@ -214,7 +237,7 @@ export function ScanSheet({ c, edit }: { c: Ctx; edit?: Expense }) {
       <input ref={fileRef} type="file" id="f-file" accept="image/*" hidden onChange={(e) => onFile(e.target.files?.[0])} />
       {err && <div className="err-banner">{err}</div>}
       <button className="btn ghost wide" onClick={() => { setItems([{ name: "", price: 0, who: [] }]); setPrices([""]); setStep("items"); }}>Ввести позиции вручную</button>
-      <p className="ocrnote">Чек распознаётся прямо на телефоне. Первый раз загрузка языков занимает около минуты.</p>
+      <p className="ocrnote">{c.ai ? "Чек прочитает ИИ: поймёт позиции на любом языке, сервис и налоги. Потом каждый отметит своё." : "Чек распознаётся прямо на телефоне. Первый раз загрузка языков занимает около минуты."}</p>
     </>
   );
   if (step === "ocr") return (
@@ -391,6 +414,22 @@ export function GroupSheet({ c, create }: { c: Ctx | (Omit<Ctx, "g"> & { g?: Gro
         {g.members.map((m) => <div className="pp" key={m.id}><Avatar p={m} size="sm" me={c.me} /><span>{m.id === c.me ? `${m.first_name} (ты)` : m.first_name}{m.username ? <small style={{ color: "var(--muted)" }}> @{m.username}</small> : null}</span>{m.id === g.created_by && <span style={{ flex: "none", color: "var(--muted)", fontSize: 13 }}>создатель</span>}</div>)}
         <div className="pp"><button style={{ color: "var(--accent)", fontWeight: 600 }} onClick={() => c.open({ kind: "invite" })}>+ Позвать участников</button></div>
       </div></div>}
+      {g && <div className="field"><span className="flabel">Чат Telegram</span>
+        {g.tg_chat_id ? (
+          <div className="box"><div className="pp">
+            <span className="ico"><svg viewBox="0 0 24 24"><path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-5 4z" /></svg></span>
+            <span>Подключён «{g.tg_chat_title || "чат"}»<br /><small style={{ color: "var(--muted)" }}>Сообщения вида «+1200 такси» из чата записываются в расходы</small></span>
+          </div>
+            <div className="pp"><button style={{ color: "var(--minus)", fontWeight: 600 }} onClick={() => c.run("unlinkChat", { id: g.id }, "Чат отключён")}>Отключить чат</button></div>
+          </div>
+        ) : <>
+          <button className="btn ghost wide" onClick={() => {
+            const url = `https://t.me/${BOT_USERNAME}?startgroup=${g.invite_code}`;
+            if (tg) tg.openTelegramLink(url); else window.open(url, "_blank");
+          }}>Подключить чат Telegram</button>
+          <span style={{ color: "var(--muted)", fontSize: 13 }}>Выбери чат поездки, бот присоединится к нему. Траты можно будет писать прямо в чате: «+1200 такси», «/itog» покажет расчёт.</span>
+        </>}
+      </div>}
       {create && <span style={{ color: "var(--muted)", fontSize: 13 }}>После создания получишь ссылку, чтобы позвать друзей.</span>}
       {err && <p className="err">{err}</p>}
       <button className="btn wide" disabled={busy} onClick={save}>{busy ? "Сохраняю…" : create ? "Создать группу" : "Сохранить"}</button>
@@ -427,3 +466,61 @@ export const defaultCurs = () => {
   try { const v = JSON.parse(localStorage.getItem("skinemsya-curs") || "null"); if (Array.isArray(v) && v.length) return v as string[]; } catch { /* нет */ }
   return [...DEFAULT_CURS];
 };
+
+// ---------- помощь и обратная связь ----------
+export function HelpSheet({ c }: { c: Omit<Ctx, "g"> & { g?: Group } }) {
+  const [text, setText] = useState("");
+  const [shot, setShot] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState(false);
+  async function attach(f?: File) {
+    if (!f) return;
+    const url = URL.createObjectURL(f), img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, 1280 / Math.max(img.width, img.height)), cv = document.createElement("canvas");
+      cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
+      cv.getContext("2d")!.drawImage(img, 0, 0, cv.width, cv.height);
+      setShot(cv.toDataURL("image/jpeg", 0.8)); URL.revokeObjectURL(url);
+    };
+    img.src = url;
+  }
+  async function send() {
+    if (text.trim().length < 3 || busy) return;
+    setBusy(true);
+    const ok = await c.run("feedback", {
+      text, group_id: c.g?.id ?? null, screenshot: shot ? shot.split(",")[1] : undefined,
+      context: { group: c.g?.name ?? "", platform: `${tg?.platform ?? "web"} · Telegram ${tg?.version ?? "?"} · ${navigator.userAgent.slice(0, 120)}` },
+    }, "Сообщение отправлено");
+    setBusy(false);
+    if (ok) setSent(true);
+  }
+  if (sent) return (
+    <>
+      <SheetHead title="Спасибо!" onClose={c.close} />
+      <p style={{ margin: 0, color: "var(--muted)" }}>Сообщение ушло разработчику. Ответ придёт от бота @{BOT_USERNAME} в личные сообщения.</p>
+      <button className="btn wide" onClick={c.close}>Готово</button>
+    </>
+  );
+  return (
+    <>
+      <SheetHead title="Помощь" onClose={c.close} />
+      <div className="box">
+        <div className="pp"><span><b>Как позвать друзей?</b><br /><small style={{ color: "var(--muted)" }}>Кнопка «Позвать» на экране расходов. Ссылку можно отправить в любой чат.</small></span></div>
+        <div className="pp"><span><b>Как записывать траты из чата Telegram?</b><br /><small style={{ color: "var(--muted)" }}>Карандаш в шапке группы → «Подключить чат Telegram». Потом пишите в чат «+1200 такси».</small></span></div>
+        <div className="pp"><span><b>Почему долг не закрылся?</b><br /><small style={{ color: "var(--muted)" }}>Перевод засчитывается, когда получатель нажмёт «Получил».</small></span></div>
+      </div>
+      <div className="field"><label className="flabel" htmlFor="f-help">Написать разработчику</label>
+        <textarea id="f-help" className="text" rows={5} maxLength={3000} value={text} onChange={(e) => setText(e.target.value)}
+          placeholder="Что случилось или чего не хватает? Опиши по шагам, если что-то сломалось." style={{ resize: "vertical", fontFamily: "inherit" }} />
+      </div>
+      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+        {shot && <img className="thumb" src={shot} alt="Скриншот" />}
+        <label className="chip addcur" htmlFor="f-shot" style={{ cursor: "pointer" }}>{shot ? "Заменить скриншот" : "+ Приложить скриншот"}</label>
+        {shot && <button className="linkbtn" onClick={() => setShot(null)}>Убрать</button>}
+        <input type="file" id="f-shot" accept="image/*" hidden onChange={(e) => attach(e.target.files?.[0])} />
+      </div>
+      <button className="btn wide" disabled={busy || text.trim().length < 3} onClick={send}>{busy ? "Отправляю…" : "Отправить"}</button>
+      <p className="note">Вместе с сообщением уйдут твоё имя в Telegram и модель устройства, чтобы было проще разобраться.</p>
+    </>
+  );
+}
