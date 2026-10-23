@@ -57,29 +57,44 @@ export async function recognize(file: Blob, onProgress: (p: number, stage: strin
 const SKIP = /(итог|всего|сумма|total|subtotal|sub total|наличн|сдача|change|cash|карт|card|visa|master|мир\b|ндс|vat|налог|tax|скидк|discount|кассир|cashier|чек\b|receipt|инн|кпп|смена|телефон|tel\b|www|http|дата|date|время|time|оплат|paid|payment|баланс|бонус|баллы|terminal|терминал|спасибо|thank)/i;
 const TOTAL = /(итог|итого|всего к оплате|к оплате|grand total|total|amount due|jumlah|tổng|toplam)/i;
 const SERVICE = /(service|сервис|обслуж|чаев|tip|gratuity|pb1|ppn|tax|налог|vat)/i;
-const PRICE_AT_END = /^(.*?)[\s.:=*×xх-]*((?:\d{1,3}(?:[ ., ']\d{3})+|\d+)(?:[.,]\d{1,2})?)\s*(?:₽|руб\.?|р\.?|rp|idr|฿|thb|₹|rs\.?|inr|\$|€|usd|eur)?\s*$/i;
 
 export type ParsedReceipt = { place: string; items: ReceiptItem[]; total: number | null; service: number };
 
+const NUM = /(?:\d{1,3}(?:[ .,\u00a0']\d{3})+(?!\d)|\d+)(?:[.,]\d{1,2})?/g;
+
+/** Разбирает строку чека: название — текст до первого числа, цена — последнее «денежное» число.
+ *  «Onion Flower 320.00 5» → Onion Flower, 320; «Капучино 2 x 290.00 =580.00» → Капучино, 580 */
+function splitLine(line: string): { name: string; price: number } | null {
+  const nums = [...line.matchAll(NUM)].map((m) => ({ raw: m[0], at: m.index ?? 0, v: parseAmount(m[0]) }));
+  if (!nums.length) return null;
+  // «денежные» числа: с копейками или от 10 и больше; мелкие целые в конце строки обычно количество
+  const money = nums.filter((n) => /[.,]\d{2}$/.test(n.raw) || n.v >= 10);
+  if (!money.length) return null; // только мелкие целые: номер стола, количество гостей
+  const pick = money[money.length - 1];
+  const firstNum = nums[0];
+  // число внутри названия вроде «Bintang 0,62» оставляем в названии, если после него есть буквы
+  const cut = nums.find((n) => !/[a-zа-яё]{2,}/i.test(line.slice(n.at + n.raw.length))) ?? firstNum;
+  const name = line.slice(0, cut.at).replace(/^[\d\s.,*xх×#-]+(?=[^\d])/i, "").replace(/[\s.:=*×xх@|-]+$/i, "").trim();
+  return { name, price: pick.v };
+}
+
 export function parseReceipt(text: string): ParsedReceipt {
-  const lines = text.split(/\r?\n/).map((l) => l.replace(/\s+/g, " ").trim()).filter(Boolean);
+  const lines = text.split(/\r?\n/).map((l) => l.replace(/\s+/g, " ").replace(/[|]/g, " ").trim()).filter(Boolean);
   const items: ReceiptItem[] = [];
   let total: number | null = null, service = 0, place = "";
   for (const line of lines) {
-    const m = line.match(PRICE_AT_END);
-    if (!m) { if (!place && /[a-zа-яё]{3,}/i.test(line) && !SKIP.test(line)) place = line.slice(0, 40); continue; }
-    const name = m[1].replace(/^[\d\s.,*xх×#-]+(?=[^\d])/i, "").replace(/[\s.:=*-]+$/, "").trim();
-    const price = parseAmount(m[2]);
+    const sp = /\d/.test(line) ? splitLine(line) : null;
+    if (!sp) { if (!place && /[a-zа-яё]{3,}/i.test(line) && !SKIP.test(line)) place = line.slice(0, 40); continue; }
+    const { name, price } = sp;
     if (!price || price <= 0) continue;
     if (TOTAL.test(line)) { total = Math.max(total ?? 0, price); continue; }
     if (SERVICE.test(line) && !/[а-яёa-z]{4,}.*\d+\s*(шт|pcs)/i.test(line)) { service += price; continue; }
     if (SKIP.test(line)) continue;
     // имя должно содержать буквы, иначе это служебная строка с числами
-    if (!/[a-zа-яё]{2,}/i.test(name)) continue;
+    if (!/[a-zа-яё]{2,}/i.test(name)) { if (!place && /[a-zа-яё]{3,}/i.test(line)) place = ""; continue; }
     items.push({ name: name.slice(0, 60), price, who: [] });
   }
-  // если итог на чеке меньше суммы позиций, лишние строки — скорее всего мусор; оставляем как есть, человек поправит
-  return { place, items, total, service };
+  return { place: /\d/.test(place) ? "" : place, items, total, service };
 }
 
 // ---------- ИИ-распознавание на сервере ----------

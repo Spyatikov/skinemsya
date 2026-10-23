@@ -2,7 +2,26 @@
 import { db, fail } from "./shared.ts";
 
 const KEY = Deno.env.get("ANTHROPIC_API_KEY") ?? "";
-const MODELS = [Deno.env.get("RECEIPT_MODEL"), "claude-sonnet-5-5", "claude-sonnet-4-5"].filter(Boolean) as string[];
+const HEADERS = { "x-api-key": KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" };
+
+// Список моделей берём у API: так не зависим от того, какие имена доступны ключу.
+// Предпочитаем Sonnet (точнее читает чеки), потом Haiku, потом остальные; API отдаёт новые первыми.
+let models: string[] | null = null;
+async function pickModels(): Promise<string[]> {
+  if (models?.length) return models;
+  const forced = Deno.env.get("RECEIPT_MODEL");
+  let ids: string[] = [];
+  try {
+    const r = await fetch("https://api.anthropic.com/v1/models?limit=100", { headers: HEADERS });
+    const j = await r.json();
+    ids = (j.data ?? []).map((m: { id: string }) => m.id);
+    if (!r.ok) console.error("anthropic models error:", r.status, JSON.stringify(j).slice(0, 300));
+  } catch (e) { console.error("anthropic models fetch failed:", String(e)); }
+  const rank = (id: string) => (/sonnet/.test(id) ? 0 : /haiku/.test(id) ? 1 : /opus/.test(id) ? 2 : 3);
+  const sorted = ids.map((id, i) => ({ id, i })).sort((a, b) => rank(a.id) - rank(b.id) || a.i - b.i).map((x) => x.id);
+  models = [...new Set([forced, ...sorted.slice(0, 3)].filter(Boolean) as string[])];
+  return models;
+}
 const DAILY_LIMIT = Number(Deno.env.get("RECEIPT_DAILY_LIMIT") ?? "40");
 export const aiEnabled = () => Boolean(KEY);
 
@@ -55,10 +74,12 @@ export async function scanReceipt(userId: number, imageB64: string, mediaType: s
   await db.from("ai_usage").upsert({ user_id: userId, day, count: (used?.count ?? 0) + 1 });
 
   let lastErr = "";
-  for (const model of MODELS) {
+  const list = await pickModels();
+  if (!list.length) fail(502, "ИИ сейчас недоступен: ключ не видит ни одной модели. Проверь ключ и баланс в Anthropic Console.");
+  for (const model of list) {
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
-      headers: { "x-api-key": KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      headers: HEADERS,
       body: JSON.stringify({
         model, max_tokens: 4000,
         tools: [TOOL], tool_choice: { type: "tool", name: "receipt" },
@@ -74,9 +95,12 @@ export async function scanReceipt(userId: number, imageB64: string, mediaType: s
       if (!tool) fail(502, "ИИ не вернул данные чека");
       return tool.input;
     }
-    lastErr = j?.error?.message ?? `HTTP ${r.status}`;
-    if (r.status !== 404 && !/model/i.test(lastErr)) break; // пробуем другую модель, только если эта недоступна
+    lastErr = `${model} → ${r.status} ${j?.error?.type ?? ""}: ${j?.error?.message ?? ""}`;
+    console.error("anthropic error:", lastErr);
+    if (r.status === 404) { models = null; continue; } // модель пропала — пробуем следующую
+    if (r.status === 401 || r.status === 403) fail(502, "ИИ недоступен: ключ Anthropic не принят. Проверь ключ в настройках сервера.");
+    if (r.status === 400 && /credit|balance|billing/i.test(lastErr)) fail(502, "ИИ недоступен: на счёте Anthropic закончились деньги.");
+    break;
   }
-  console.error("anthropic error:", lastErr);
   fail(502, "ИИ сейчас не ответил. Попробуй ещё раз или введи позиции вручную.");
 }
