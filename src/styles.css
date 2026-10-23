@@ -308,3 +308,4 @@ img.av{object-fit:cover;background:var(--sunk)}
 .helprow small{color:var(--muted);font-size:13px}
 .helprow .chev{width:18px;height:18px;color:var(--muted);flex:none}
 textarea.text{min-height:110px;line-height:1.4}
+.center img.logo{width:112px;height:112px;border-radius:26px;box-shadow:0 10px 30px -10px rgb(0 0 0 / .6)}

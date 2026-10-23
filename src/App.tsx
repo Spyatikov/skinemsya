@@ -91,7 +91,7 @@ export default function App() {
   // ---------- экраны-заглушки ----------
   if (!inTelegram) return (
     <main><div className="wrap"><div className="center">
-      <div className="big-emoji">✈️</div>
+      <img className="logo" src={`${import.meta.env.BASE_URL}logo.png`} alt="Скинемся" />
       <h2>Скинемся</h2>
       <p>Это приложение для Telegram: общие траты в поездках с друзьями. Открой его через бота в Telegram, чтобы войти под своим аккаунтом.</p>
     </div></div></main>
@@ -107,7 +107,7 @@ export default function App() {
     <>
       {!g ? (
         <main><div className="wrap"><div className="center">
-          <div className="big-emoji">🧳</div>
+          <img className="logo" src={`${import.meta.env.BASE_URL}logo.png`} alt="Скинемся" />
           <h2>Привет, {tg?.initDataUnsafe.user?.first_name ?? "путешественник"}!</h2>
           <p>Создай группу для поездки и позови друзей по ссылке. Траты, валюты и долги посчитаются сами.</p>
           <button className="btn" onClick={() => setSheet({ kind: "group", create: true })}>Создать группу</button>
