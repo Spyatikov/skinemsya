@@ -368,6 +368,7 @@ export function GroupSheet({ c, create }: { c: Ctx | (Omit<Ctx, "g"> & { g?: Gro
   const [end, setEnd] = useState(g?.end_date ?? "");
   const [cur, setCur] = useState(g?.currency ?? "RUB");
   const [reminders, setReminders] = useState(g?.reminders ?? true);
+  const [mirror, setMirror] = useState(g?.mirror_to_chat ?? false);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -375,7 +376,7 @@ export function GroupSheet({ c, create }: { c: Ctx | (Omit<Ctx, "g"> & { g?: Gro
     if (!nameV.trim()) return setErr("Впиши название группы.");
     if (start && end && end < start) return setErr("Дата конца раньше даты начала. Поправь даты.");
     setBusy(true);
-    const fields = { name: nameV.trim(), emoji, photo, start_date: start || null, end_date: end || null, currency: cur, reminders };
+    const fields = { name: nameV.trim(), emoji, photo, start_date: start || null, end_date: end || null, currency: cur, reminders, ...(g?.tg_chat_id ? { mirror_to_chat: mirror } : {}) };
     if (create) {
       const res = await c.run("createGroup", fields, "Группа создана");
       setBusy(false);
@@ -428,6 +429,13 @@ export function GroupSheet({ c, create }: { c: Ctx | (Omit<Ctx, "g"> & { g?: Gro
           </div>
             <div className="pp"><button style={{ color: "var(--minus)", fontWeight: 600 }} onClick={() => c.run("unlinkChat", { id: g.id }, "Чат отключён")}>Отключить чат</button></div>
           </div>
+        ) : null}
+        {g.tg_chat_id ? (
+          <label className="toggle" htmlFor="f-mirror">
+            <span><b>Дублировать в чат Telegram</b><small>Траты и сообщения, добавленные в приложении, бот будет пересылать в «{g.tg_chat_title || "чат"}».</small></span>
+            <input type="checkbox" id="f-mirror" checked={mirror} onChange={(e) => setMirror(e.target.checked)} />
+            <i aria-hidden="true" />
+          </label>
         ) : <>
           <button className="btn ghost wide" onClick={() => {
             const url = `https://t.me/${BOT_USERNAME}?startgroup=${g.invite_code}`;

@@ -63,7 +63,8 @@ const PROMPT = `Это фото чека из кафе, ресторана ил�
 - Числа пиши без разделителей тысяч: 45.000 в индонезийском чеке это 45000, 1 250,00 это 1250.
 - Не включай в items строки Subtotal, Total, Tax, PB1, PPN, Service, НДС, Итого, Наличные, Сдача, Card и подобные.
 - Налоги и сервис, которые прибавляются к сумме позиций, сложи в service_and_tax.
-- Если что-то не читается, всё равно верни то, что видно, и поставь confidence=low.`;
+- Если что-то не читается, всё равно верни то, что видно, и поставь confidence=low.
+Ответь только вызовом инструмента receipt, без текста.`;
 
 export async function scanReceipt(userId: number, imageB64: string, mediaType: string) {
   if (!KEY) fail(503, "ИИ-распознавание ещё не настроено");
@@ -81,8 +82,9 @@ export async function scanReceipt(userId: number, imageB64: string, mediaType: s
       method: "POST",
       headers: HEADERS,
       body: JSON.stringify({
-        model, max_tokens: 4000,
-        tools: [TOOL], tool_choice: { type: "tool", name: "receipt" },
+        model, max_tokens: 8000,
+        // новые модели не поддерживают принудительный вызов инструмента, поэтому auto + явная просьба в промпте
+        tools: [TOOL], tool_choice: { type: "auto" },
         messages: [{ role: "user", content: [
           { type: "image", source: { type: "base64", media_type: mediaType || "image/jpeg", data: imageB64 } },
           { type: "text", text: PROMPT },
@@ -92,8 +94,13 @@ export async function scanReceipt(userId: number, imageB64: string, mediaType: s
     const j = await r.json().catch(() => ({}));
     if (r.ok) {
       const tool = (j.content ?? []).find((c: { type: string }) => c.type === "tool_use");
-      if (!tool) fail(502, "ИИ не вернул данные чека");
-      return tool.input;
+      if (tool) return tool.input;
+      // запасной путь: модель ответила текстом с JSON
+      const txt = (j.content ?? []).filter((c: { type: string }) => c.type === "text").map((c: { text: string }) => c.text).join("\n");
+      const m = txt.match(/\{[\s\S]*\}/);
+      if (m) { try { return JSON.parse(m[0]); } catch { /* ниже ошибка */ } }
+      console.error("anthropic: no tool_use, text:", txt.slice(0, 300));
+      fail(502, "ИИ не вернул данные чека. Попробуй ещё раз.");
     }
     lastErr = `${model} → ${r.status} ${j?.error?.type ?? ""}: ${j?.error?.message ?? ""}`;
     console.error("anthropic error:", lastErr);

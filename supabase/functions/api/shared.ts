@@ -168,9 +168,10 @@ export async function planText(groupId: string) {
 }
 
 /** Сообщение в привязанный чат Telegram, если он есть */
-export async function postToLinkedChat(groupId: string, html: string, code?: string) {
-  const { data: g } = await db.from("groups").select("tg_chat_id,invite_code").eq("id", groupId).maybeSingle();
+export async function postToLinkedChat(groupId: string, html: string, code?: string, onlyIfMirror = false) {
+  const { data: g } = await db.from("groups").select("tg_chat_id,invite_code,mirror_to_chat").eq("id", groupId).maybeSingle();
   if (!g?.tg_chat_id) return;
+  if (onlyIfMirror && !g.mirror_to_chat) return;
   await tgApi("sendMessage", {
     chat_id: g.tg_chat_id, text: html, parse_mode: "HTML", disable_web_page_preview: true,
     reply_markup: { inline_keyboard: [[{ text: "Открыть Скинемся", url: groupLink(code ?? g.invite_code) }]] },

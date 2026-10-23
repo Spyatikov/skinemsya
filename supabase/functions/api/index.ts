@@ -92,7 +92,7 @@ async function loadAll(userId: number) {
   };
 }
 
-const GROUP_FIELDS = ["name", "emoji", "photo", "start_date", "end_date", "currency", "reminders"] as const;
+const GROUP_FIELDS = ["name", "emoji", "photo", "start_date", "end_date", "currency", "reminders", "mirror_to_chat"] as const;
 const EXPENSE_FIELDS = ["title", "category", "amount", "currency", "rate", "payer", "split", "source", "spent_on"] as const;
 const pick = <T extends string>(o: Record<string, unknown>, keys: readonly T[]) =>
   Object.fromEntries(keys.filter((k) => o[k] !== undefined).map((k) => [k, o[k]]));
@@ -158,9 +158,9 @@ Deno.serve(async (req) => {
         const { data, error } = await db.from("expenses").insert(row).select("id").single();
         if (error) fail(400, error.message);
         if (p.botText) await botMessage(p.group_id, String(p.botText).slice(0, 2000), true);
-        // сообщаем в привязанный чат Telegram (из чата приложения туда же пишет сам бот)
+        // в привязанный чат Telegram — только если в настройках группы включено дублирование
         const amt = Number(p.amount), rateV = Number(p.rate);
-        await postToLinkedChat(p.group_id, `🧾 <b>${esc(user.first_name)}</b> добавил(а) «${esc(String(p.title ?? ""))}»: ${fmtMoney(amt, String(p.currency))}${p.currency !== "RUB" ? ` ≈ ${money(amt * rateV)}` : ""}`);
+        await postToLinkedChat(p.group_id, `🧾 <b>${esc(user.first_name)}</b> добавил(а) «${esc(String(p.title ?? ""))}»: ${fmtMoney(amt, String(p.currency))}${p.currency !== "RUB" ? ` ≈ ${money(amt * rateV)}` : ""}`, undefined, true);
         return json({ id: data!.id });
       }
       case "updateExpense": {
@@ -260,7 +260,7 @@ Deno.serve(async (req) => {
         if (!text) fail(400, "Пустое сообщение");
         await db.from("messages").insert({ group_id: p.group_id, user_id: me, text });
         if (p.botText) await botMessage(p.group_id, String(p.botText).slice(0, 2000), Boolean(p.openFeed));
-        if (!/^[+/]/.test(text)) await postToLinkedChat(p.group_id, `💬 <b>${esc(user.first_name)}</b> (из приложения): ${esc(text)}`);
+        if (!/^[+/]/.test(text)) await postToLinkedChat(p.group_id, `💬 <b>${esc(user.first_name)}</b> (из приложения): ${esc(text)}`, undefined, true);
         return json({ ok: true });
       }
       default:
