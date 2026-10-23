@@ -367,6 +367,7 @@ export function GroupSheet({ c, create }: { c: Ctx | (Omit<Ctx, "g"> & { g?: Gro
   const [start, setStart] = useState(g?.start_date ?? (create ? todayISO() : ""));
   const [end, setEnd] = useState(g?.end_date ?? "");
   const [cur, setCur] = useState(g?.currency ?? "RUB");
+  const [reminders, setReminders] = useState(g?.reminders ?? true);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -374,7 +375,7 @@ export function GroupSheet({ c, create }: { c: Ctx | (Omit<Ctx, "g"> & { g?: Gro
     if (!nameV.trim()) return setErr("Впиши название группы.");
     if (start && end && end < start) return setErr("Дата конца раньше даты начала. Поправь даты.");
     setBusy(true);
-    const fields = { name: nameV.trim(), emoji, photo, start_date: start || null, end_date: end || null, currency: cur };
+    const fields = { name: nameV.trim(), emoji, photo, start_date: start || null, end_date: end || null, currency: cur, reminders };
     if (create) {
       const res = await c.run("createGroup", fields, "Группа создана");
       setBusy(false);
@@ -414,6 +415,11 @@ export function GroupSheet({ c, create }: { c: Ctx | (Omit<Ctx, "g"> & { g?: Gro
         {g.members.map((m) => <div className="pp" key={m.id}><Avatar p={m} size="sm" me={c.me} /><span>{m.id === c.me ? `${m.first_name} (ты)` : m.first_name}{m.username ? <small style={{ color: "var(--muted)" }}> @{m.username}</small> : null}</span>{m.id === g.created_by && <span style={{ flex: "none", color: "var(--muted)", fontSize: 13 }}>создатель</span>}</div>)}
         <div className="pp"><button style={{ color: "var(--accent)", fontWeight: 600 }} onClick={() => c.open({ kind: "invite" })}>+ Позвать участников</button></div>
       </div></div>}
+      <label className="toggle" htmlFor="f-remind">
+        <span><b>Напоминать о долгах</b><small>После окончания поездки бот раз в 2 дня напишет должникам в личку, кому и сколько перевести. Не больше 5 раз.</small></span>
+        <input type="checkbox" id="f-remind" checked={reminders} onChange={(e) => setReminders(e.target.checked)} />
+        <i aria-hidden="true" />
+      </label>
       {g && <div className="field"><span className="flabel">Чат Telegram</span>
         {g.tg_chat_id ? (
           <div className="box"><div className="pp">

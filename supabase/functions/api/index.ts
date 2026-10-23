@@ -5,6 +5,7 @@
 // Секреты (Supabase → Edge Functions → Secrets): TELEGRAM_BOT_TOKEN, ANTHROPIC_API_KEY.
 import { scanReceipt, aiEnabled } from "./ai.ts";
 import { handleUpdate, setupBot, webhookSecret } from "./bot.ts";
+import { runReminders } from "./reminders.ts";
 import { ADMIN_ID, BOT_TOKEN, BOT_USERNAME, db, esc, fail, HttpError, money as fmtMoney, postToLinkedChat, tgApi } from "./shared.ts";
 
 const CORS = {
@@ -91,7 +92,7 @@ async function loadAll(userId: number) {
   };
 }
 
-const GROUP_FIELDS = ["name", "emoji", "photo", "start_date", "end_date", "currency"] as const;
+const GROUP_FIELDS = ["name", "emoji", "photo", "start_date", "end_date", "currency", "reminders"] as const;
 const EXPENSE_FIELDS = ["title", "category", "amount", "currency", "rate", "payer", "split", "source", "spent_on"] as const;
 const pick = <T extends string>(o: Record<string, unknown>, keys: readonly T[]) =>
   Object.fromEntries(keys.filter((k) => o[k] !== undefined).map((k) => [k, o[k]]));
@@ -104,6 +105,12 @@ Deno.serve(async (req) => {
   if (req.method === "GET" && url.searchParams.has("setup")) {
     const self = `${Deno.env.get("SUPABASE_URL")}/functions/v1/api`;
     return json(await setupBot(self));
+  }
+  // ежедневные напоминания о долгах (pg_cron), ключ хранится в app_config
+  if (url.searchParams.get("cron") === "reminders") {
+    const { data: cfg } = await db.from("app_config").select("value").eq("key", "cron_key").maybeSingle();
+    if (!cfg?.value || url.searchParams.get("key") !== cfg.value) return new Response("forbidden", { status: 403 });
+    try { return json(await runReminders()); } catch (e) { console.error("reminders failed", e); return json({ error: String(e) }, 500); }
   }
   // вебхук Telegram
   const tgSecret = req.headers.get("x-telegram-bot-api-secret-token");
