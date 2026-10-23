@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { call, type LoadResult } from "./api";
 import { API_URL } from "./config";
 import { type Expense, type Group, myStats, nets, onN, pairCount, parseAmount, plan, plural, rubOf, shares, type Transfer } from "./money";
-import { CATALOG, inBase, loadRates, money, rateOf, ratesDate, sym } from "./rates";
+import { CATALOG, compact, inBase, inBaseShort, loadRates, money, rateOf, ratesDate, sym } from "./rates";
 import { AddSheet, type Ctx, DetailSheet, GroupSheet, HelpSheet, InviteSheet, ScanSheet, type Sheet, defaultCurs } from "./sheets";
 import { haptic, inTelegram, initTelegram, tg } from "./telegram";
 import { Avatar, Fly, GroupImg, Ico, catName, dayName, guessCat, relDay, richText, todayISO, tripDates } from "./ui";
@@ -188,11 +188,11 @@ function Feed({ c, onTab }: { c: Ctx; onTab: (t: Tab) => void }) {
     <>
       <section className="hero" aria-label="Твой баланс"><div className="hero-top">
         <p className="lbl">{label[1]}</p>
-        <p className={`big num ${label[0]}`}>{label[2]}{inBase(Math.abs(st.net) > 1 ? Math.abs(st.net) : 0, c.base)}</p>
+        <p className={`big num ${label[0]}`}>{label[2]}{inBaseShort(Math.abs(st.net) > 1 ? Math.abs(st.net) : 0, c.base)}</p>
       </div>
         <dl className="facts num">
-          <div><dt>Все расходы</dt><dd>{inBase(st.spent, c.base)}</dd></div>
-          <div><dt>Твоя доля</dt><dd>{inBase(st.share, c.base)}</dd></div>
+          <div><dt>Все расходы</dt><dd>{inBaseShort(st.spent, c.base)}</dd></div>
+          <div><dt>Твоя доля</dt><dd>{inBaseShort(st.share, c.base)}</dd></div>
           <div><dt>В группе</dt><dd>{g.members.length} чел.</dd></div>
         </dl>
       </section>
@@ -209,13 +209,13 @@ function Feed({ c, onTab }: { c: Ctx; onTab: (t: Tab) => void }) {
             <button className="row" key={e.id} onClick={() => c.open({ kind: "detail", id: e.id })}><Ico k="transfer" />
               <div className="mid"><div className="t"><b>{nameOf(c, e.from_user)} → {e.to_user === c.me ? "тебе" : nameOf(c, e.to_user)}</b></div>
                 <small>{e.pending ? <span className="tag wait">ждёт подтверждения</span> : "Перевод в счёт долга"}</small></div>
-              <div className="amt"><b className="num" style={e.pending ? { color: "var(--muted)" } : undefined}>{inBase(rubOf(e), c.base)}</b></div>
+              <div className="amt"><b className="num" style={e.pending ? { color: "var(--muted)" } : undefined}>{inBaseShort(rubOf(e), c.base)}</b></div>
             </button>
           ) : (
             <button className="row" key={e.id} onClick={() => c.open({ kind: "detail", id: e.id })}><Ico k={e.category} />
               <div className="mid"><div className="t"><b>{e.title || catName(e.category)}</b>{e.source === "chat" ? <span className="tag">из чата</span> : e.source === "scan" ? <span className="tag">по чеку</span> : null}</div>
                 <small>{catName(e.category)} · {paidBy(c, e.payer)} · {onN(Object.keys(shares(e)).length)}</small></div>
-              <div className="amt"><b className="num">{money(Number(e.amount), e.currency)}</b>{e.currency !== c.base && <small className="num">{inBase(rubOf(e), c.base)}</small>}</div>
+              <div className="amt"><b className="num">{compact(Number(e.amount), e.currency)}</b>{e.currency !== c.base && <small className="num">{inBaseShort(rubOf(e), c.base)}</small>}</div>
             </button>
           ))}</div>
         </div>
@@ -250,7 +250,7 @@ function Balances({ c, onTab }: { c: Ctx; onTab: (t: Tab) => void }) {
           const v = n[m.id] || 0, w = (Math.abs(v) / max) * 50;
           return <div className="mrow" key={m.id}><Avatar p={m} size="lg" me={c.me} />
             <div><div className="mname">{m.id === c.me ? "Ты" : m.first_name}</div><div className="bar"><i style={{ background: `var(${v >= 0 ? "--plus" : "--minus"})`, ...(v >= 0 ? { left: "50%" } : { right: "50%" }), width: `${w}%` }} /></div></div>
-            <b className={`num ${v > 1 ? "pos" : v < -1 ? "neg" : ""}`}>{v > 1 ? "+" : v < -1 ? "−" : ""}{inBase(Math.abs(v), c.base)}</b></div>;
+            <b className={`num ${v > 1 ? "pos" : v < -1 ? "neg" : ""}`}>{v > 1 ? "+" : v < -1 ? "−" : ""}{inBaseShort(Math.abs(v), c.base)}</b></div>;
         })}
       </div></section>
       <section className="sec"><h2>Как рассчитаться</h2>
@@ -283,7 +283,7 @@ function Groups({ groups, active, me, base, onPick, onCreate, onHelp }: { groups
             <span className="gav"><GroupImg g={g} /></span>
             <div className="mid"><div className="t"><b>{g.name}</b>{g.id === active && <span className="tag">открыта</span>}</div>
               <small>{[tripDates(g), `${n} ${plural(n, "человек", "человека", "человек")}`].filter(Boolean).join(" · ")}</small></div>
-            <div className="amt">{v > 1 ? <><b className="num pos">+{inBase(v, base)}</b><small>тебе вернут</small></> : v < -1 ? <><b className="num neg">−{inBase(-v, base)}</b><small>с тебя</small></> : <b style={{ color: "var(--muted)" }}>в расчёте</b>}</div>
+            <div className="amt">{v > 1 ? <><b className="num pos">+{inBaseShort(v, base)}</b><small>тебе вернут</small></> : v < -1 ? <><b className="num neg">−{inBaseShort(-v, base)}</b><small>с тебя</small></> : <b style={{ color: "var(--muted)" }}>в расчёте</b>}</div>
           </button>);
       })}</div>
       <button className="btn wide newgroup" onClick={onCreate}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>Создать группу</button>

@@ -88,3 +88,23 @@ export function rateLabel(code: string, rate: number, base: string) {
   const v = rate / rateOf(base);
   return `1 ${code} = ${new Intl.NumberFormat("ru-RU", { maximumFractionDigits: v < 1 ? 4 : 2 }).format(v)} ${sym(base)}`;
 }
+
+/** Короткая запись крупных сумм для карточек: 12,3 млн ₽, 1,5 млрд ₽.
+ *  Округляем вниз, чтобы не завышать: 499 992 658 → 499 млн. До миллиона пишем полностью. */
+export function compact(v: number, code: string) {
+  const a = Math.abs(v), sign = v < 0 ? "-" : "";
+  const units: [number, string][] = [[1e12, "трлн"], [1e9, "млрд"], [1e6, "млн"]];
+  for (const [k, word] of units) {
+    if (a < k) continue;
+    const x = a / k;
+    const d = x < 10 ? 1 : x < 100 ? 1 : 0;
+    const t = Math.floor(x * 10 ** d) / 10 ** d;
+    const s = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: d }).format(t);
+    return `${sign}${s} ${word} ${sym(code)}`;
+  }
+  return money(v, code);
+}
+export function inBaseShort(rub: number, base: string) {
+  const v = rub / rateOf(base);
+  return compact(base === "RUB" ? Math.round(v) : Math.round(v * 100) / 100, base);
+}
