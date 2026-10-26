@@ -21,7 +21,8 @@ export type Sheet =
   | { kind: "detail"; id: string }
   | { kind: "group"; create?: boolean }
   | { kind: "invite" }
-  | { kind: "help" };
+  | { kind: "help" }
+  | { kind: "stats" };
 
 const name = (c: Ctx, id: number | null) => (id === c.me ? "Ты" : c.g.members.find((m) => m.id === id)?.first_name ?? "Кто-то");
 const prof = (c: Ctx, id: number | null) => c.g.members.find((m) => m.id === id);

@@ -3,6 +3,7 @@ import { call, type LoadResult } from "./api";
 import { API_URL } from "./config";
 import { type Expense, type Group, myStats, nets, onN, pairCount, parseAmount, plan, plural, rubOf, shares, type Transfer } from "./money";
 import { CATALOG, compact, inBase, inBaseShort, loadRates, money, rateOf, ratesDate, sym } from "./rates";
+import { StatsSheet } from "./stats";
 import { AddSheet, type Ctx, DetailSheet, GroupSheet, HelpSheet, InviteSheet, ScanSheet, type Sheet, defaultCurs } from "./sheets";
 import { haptic, inTelegram, initTelegram, tg } from "./telegram";
 import { Avatar, Fly, GroupImg, Ico, catName, dayName, guessCat, relDay, richText, todayISO, tripDates } from "./ui";
@@ -31,9 +32,9 @@ export default function App() {
     toastTimer.current = window.setTimeout(() => setToastText(""), 2400);
   }, []);
 
-  const reload = useCallback(async (join?: string) => {
+  const reload = useCallback(async (join?: string, first = false) => {
     try {
-      const r = await call<LoadResult>("load", join ? { join } : {});
+      const r = await call<LoadResult>("load", { ...(join ? { join } : {}), ...(first ? {} : { poll: 1 }) });
       setData(r); setFatal("");
       if (r.joined) { setActiveId(r.joined); setTab("feed"); }
       return r;
@@ -49,7 +50,7 @@ export default function App() {
     loadRates().then(() => setRatesTick((x) => x + 1));
     if (!inTelegram || !API_URL) return;
     const join = new URLSearchParams(location.search).get("join") || undefined;
-    reload(join);
+    reload(join, true).then((r) => { if (r?.admin && new URLSearchParams(location.search).has("stats")) setSheet({ kind: "stats" }); });
   }, [reload]);
 
   // обновляем данные, пока приложение открыто: изменения друзей появятся сами
@@ -98,7 +99,7 @@ export default function App() {
   );
   if (!API_URL) return <Center title="Сервер ещё не подключён" text="В сборке не задан адрес серверной функции. Добавь VITE_API_URL в настройки сборки." />;
   if (!data) return fatal
-    ? <Center title="Не получилось загрузить" text={fatal} action={<button className="btn" onClick={() => { setFatal(""); reload(); }}>Попробовать снова</button>} />
+    ? <Center title="Не получилось загрузить" text={fatal} action={<button className="btn" onClick={() => { setFatal(""); reload(undefined, true); }}>Попробовать снова</button>} />
     : <main><div className="wrap"><div className="center"><div className="spinner" /><p>Загружаю группы…</p></div></div></main>;
 
   const groupSheetCtx = ctx ?? { me, base, curs, ai, addCur, run, close, open: setSheet, toast };
@@ -124,7 +125,7 @@ export default function App() {
           <main><div className="wrap" id="view">
             {tab === "feed" && <Feed c={ctx!} onTab={setTab} />}
             {tab === "balances" && <Balances c={ctx!} onTab={setTab} />}
-            {tab === "groups" && <Groups groups={groups} active={g.id} me={me} base={base} onPick={(id) => { setActiveId(id); setTab("feed"); window.scrollTo(0, 0); }} onCreate={() => setSheet({ kind: "group", create: true })} onHelp={() => setSheet({ kind: "help" })} />}
+            {tab === "groups" && <Groups groups={groups} active={g.id} me={me} base={base} onPick={(id) => { setActiveId(id); setTab("feed"); window.scrollTo(0, 0); }} onCreate={() => setSheet({ kind: "group", create: true })} onHelp={() => setSheet({ kind: "help" })} onStats={data.admin ? () => setSheet({ kind: "stats" }) : undefined} />}
             {tab === "chat" && <Chat c={ctx!} onTab={setTab} />}
           </div></main>
           <nav className="tabs" aria-label="Разделы"><div className="wrap">
@@ -146,6 +147,7 @@ export default function App() {
               : ctx && sheet.kind === "detail" ? <DetailSheet key={sheet.id} c={ctx} id={sheet.id} />
               : ctx && sheet.kind === "invite" ? <InviteSheet c={ctx} />
               : sheet.kind === "help" ? <HelpSheet c={groupSheetCtx} />
+              : sheet.kind === "stats" ? <StatsSheet onClose={close} />
               : null}
           </section>
         </div>
@@ -272,7 +274,7 @@ function Balances({ c, onTab }: { c: Ctx; onTab: (t: Tab) => void }) {
 }
 
 // ---------- группы ----------
-function Groups({ groups, active, me, base, onPick, onCreate, onHelp }: { groups: Group[]; active: string; me: number; base: string; onPick: (id: string) => void; onCreate: () => void; onHelp: () => void }) {
+function Groups({ groups, active, me, base, onPick, onCreate, onHelp, onStats }: { groups: Group[]; active: string; me: number; base: string; onPick: (id: string) => void; onCreate: () => void; onHelp: () => void; onStats?: () => void }) {
   return (
     <>
       <div className="ghead"><h2>Группы</h2></div>
@@ -288,6 +290,11 @@ function Groups({ groups, active, me, base, onPick, onCreate, onHelp }: { groups
       })}</div>
       <button className="btn wide newgroup" onClick={onCreate}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>Создать группу</button>
       <p className="note">Группа — это поездка или любая общая затея: квартира, день рождения, дача.</p>
+      {onStats && <button className="helprow" onClick={onStats}>
+        <span className="ico"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" /></svg></span>
+        <span><b>Статистика</b><small>Видишь только ты: пользователи, активность, воронка</small></span>
+        <svg className="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 6l6 6-6 6" /></svg>
+      </button>}
       <button className="helprow" onClick={onHelp}>
         <span className="ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" /><path d="M9.6 9.4a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2-2.4 3.7M12 17h.01" /></svg></span>
         <span><b>Помощь</b><small>Ответы на вопросы и связь с разработчиком</small></span>

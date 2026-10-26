@@ -157,12 +157,36 @@ async function handlePrivate(m: TgMessage, text: string) {
       return;
     }
   }
+  if (m.from!.id === ADMIN_ID && /^\/stats/.test(text)) {
+    const { data: st } = await db.rpc("admin_stats");
+    await reply(m, statsText(st), { inline_keyboard: [[{ text: "📊 Подробная статистика", web_app: { url: APP_URL.replace(/\/?$/, "/") + "?stats=1" } }]] });
+    return;
+  }
   if (/^\/(help|guide|instr)/.test(text) || /^\/start\s+help/.test(text) || /инструкц|помощ|как пользоваться/i.test(text)) {
     await reply(m, GUIDE, guideMarkup());
     return;
   }
   await reply(m, `Привет, ${esc(m.from!.first_name)}! 👋\n\nЯ помогаю делить общие траты в поездках: валюты, чеки и кто кому сколько должен.\n\nЖми «Запустить», а если впервые здесь — загляни в инструкцию: там короткие видеоуроки.`,
     { inline_keyboard: [[{ text: "🚀 Запустить Скинемся", web_app: { url: APP_URL } }], [{ text: "📖 Инструкция и видео", callback_data: "guide" }]] });
+}
+
+// ---------- статистика для владельца ----------
+// deno-lint-ignore no-explicit-any
+export function statsText(s: any) {
+  const n = (v: unknown) => new Intl.NumberFormat("ru-RU").format(Number(v ?? 0));
+  const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) + "%" : "—");
+  const u = s.users, g = s.groups, e = s.expenses, f = s.features, fu = s.funnel;
+  const src = e.by_source ?? {};
+  return `📊 <b>Скинемся · статистика</b>\n\n` +
+    `<b>Пользователи:</b> ${n(u.total)} (+${n(u.new_today)} сегодня, +${n(u.new_7d)} за неделю)\n` +
+    `Активны: сегодня ${n(u.dau)} · за 7 дней ${n(u.wau)} · за 30 дней ${n(u.mau)}\n` +
+    `Вернулись повторно: ${n(u.returning)} (${pct(u.returning, u.total)})\n\n` +
+    `<b>Группы:</b> ${n(g.total)} (+${n(g.new_7d)} за неделю)\n` +
+    `С друзьями: ${n(g.with_friends)} · с тратами: ${n(g.with_expenses)} · с чатом Telegram: ${n(g.chat_linked)}\n\n` +
+    `<b>Траты:</b> ${n(e.total)} (+${n(e.new_7d)} за неделю) на ${n(e.sum_rub)} ₽\n` +
+    `Из приложения ${n(src.app)} · из чата ${n(src.chat)} · по чеку ${n(src.scan)}\n` +
+    `ИИ-сканов: ${n(f.ai_scans)} · напоминаний: ${n(f.reminders_sent)} · обращений: ${n(f.feedback)}\n\n` +
+    `<b>Воронка:</b> открыли ${n(fu.opened)} → в группе ${n(fu.in_group)} → с друзьями ${n(fu.with_friends)} → добавили трату ${n(fu.added_expense)} → рассчитались ${n(fu.settled)}`;
 }
 
 // ---------- групповой чат ----------

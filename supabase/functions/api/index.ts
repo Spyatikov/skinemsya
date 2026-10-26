@@ -132,7 +132,14 @@ Deno.serve(async (req) => {
       case "load": {
         let joined: string | null = null;
         if (p.join || startParam) joined = await joinByCode(String(p.join ?? startParam), me);
-        return json({ me, joined, ai: aiEnabled(), bot: BOT_USERNAME, ...(await loadAll(me)) });
+        if (!p.poll) await db.rpc("touch_activity", { uid: me }); // журнал активности для статистики
+        return json({ me, joined, ai: aiEnabled(), bot: BOT_USERNAME, admin: me === ADMIN_ID, ...(await loadAll(me)) });
+      }
+      case "adminStats": {
+        if (me !== ADMIN_ID) fail(403, "Статистика доступна только владельцу");
+        const { data, error } = await db.rpc("admin_stats");
+        if (error) fail(500, error.message);
+        return json(data);
       }
       case "createGroup": {
         const { data, error } = await db.from("groups")
