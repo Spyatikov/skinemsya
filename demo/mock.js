@@ -2,12 +2,12 @@
 (function () {
   const ME = 1;
   const P = {
-    1: { id: 1, first_name: "Вячеслав", username: "spyatikov" },
-    2: { id: 2, first_name: "Катя", username: "katya_travel" },
-    3: { id: 3, first_name: "Миша", username: "misha" },
-    4: { id: 4, first_name: "Аня", username: "anya" },
-    5: { id: 5, first_name: "Дима", username: "dima" },
-    6: { id: 6, first_name: "Оля", username: "olya" },
+    1: { id: 1, first_name: "Вячеслав", username: "spyatikov", photo_url: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iIzViOGRlZiIvPgo8cGF0aCBkPSJNMTggMTAwYzItMTggMTUtMjcgMzItMjdzMzAgOSAzMiAyN3oiIGZpbGw9IiMxZjNhNjMiLz48cmVjdCB4PSI0NCIgeT0iNjAiIHdpZHRoPSIxMiIgaGVpZ2h0PSIxNSIgcng9IjUiIGZpbGw9IiNmMWM3YTMiLz4KPGVsbGlwc2UgY3g9IjUwIiBjeT0iNDciIHJ4PSIxNiIgcnk9IjE4IiBmaWxsPSIjZjFjN2EzIi8+PHBhdGggZD0iTTMzIDQ0YzAtMTMgOC0yMCAxNy0yMHMxNyA3IDE3IDIwYy01LTYtMTAtOC0xNy04cy0xMiAyLTE3IDh6IiBmaWxsPSIjM2IyYTIwIi8+CjxjaXJjbGUgY3g9IjQ0IiBjeT0iNDkiIHI9IjEuOCIgZmlsbD0iIzJhMmEyYSIvPjxjaXJjbGUgY3g9IjU2IiBjeT0iNDkiIHI9IjEuOCIgZmlsbD0iIzJhMmEyYSIvPjxwYXRoIGQ9Ik00NSA1NnE1IDQgMTAgMCIgc3Ryb2tlPSIjOWE1YTRhIiBzdHJva2Utd2lkdGg9IjEuOCIgZmlsbD0ibm9uZSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PC9zdmc+" },
+    2: { id: 2, first_name: "Катя", username: "katya_travel", photo_url: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI2YyYTY1YSIvPjxwYXRoIGQ9Ik0yNiA1MmMwLTIwIDEwLTMyIDI0LTMyczI0IDEyIDI0IDMydjMwSDI2eiIgZmlsbD0iIzdhM2UxZCIvPgo8cGF0aCBkPSJNMTggMTAwYzItMTggMTUtMjcgMzItMjdzMzAgOSAzMiAyN3oiIGZpbGw9IiNjMjQxMmQiLz48cmVjdCB4PSI0NCIgeT0iNjAiIHdpZHRoPSIxMiIgaGVpZ2h0PSIxNSIgcng9IjUiIGZpbGw9IiNmNmQyYjUiLz4KPGVsbGlwc2UgY3g9IjUwIiBjeT0iNDciIHJ4PSIxNiIgcnk9IjE4IiBmaWxsPSIjZjZkMmI1Ii8+PHBhdGggZD0iTTMyIDQ2YzAtMTQgOC0yMiAxOC0yMnMxOCA4IDE4IDIyYy02LTgtMTItMTAtMTgtMTBzLTEyIDItMTggMTB6IiBmaWxsPSIjN2EzZTFkIi8+CjxjaXJjbGUgY3g9IjQ0IiBjeT0iNDkiIHI9IjEuOCIgZmlsbD0iIzJhMmEyYSIvPjxjaXJjbGUgY3g9IjU2IiBjeT0iNDkiIHI9IjEuOCIgZmlsbD0iIzJhMmEyYSIvPjxwYXRoIGQ9Ik00NSA1NnE1IDQgMTAgMCIgc3Ryb2tlPSIjOWE1YTRhIiBzdHJva2Utd2lkdGg9IjEuOCIgZmlsbD0ibm9uZSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PC9zdmc+" },
+    3: { id: 3, first_name: "Миша", username: "misha", photo_url: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iIzRmYmZjNiIvPgo8cGF0aCBkPSJNMTggMTAwYzItMTggMTUtMjcgMzItMjdzMzAgOSAzMiAyN3oiIGZpbGw9IiMyZDVkM2IiLz48cmVjdCB4PSI0NCIgeT0iNjAiIHdpZHRoPSIxMiIgaGVpZ2h0PSIxNSIgcng9IjUiIGZpbGw9IiNlOWI4OTYiLz4KPGVsbGlwc2UgY3g9IjUwIiBjeT0iNDciIHJ4PSIxNiIgcnk9IjE4IiBmaWxsPSIjZTliODk2Ii8+PHBhdGggZD0iTTM0IDQyYzEtMTEgOC0xNiAxNi0xNnMxNSA1IDE2IDE2Yy01LTQtMTAtNS0xNi01cy0xMSAxLTE2IDV6IiBmaWxsPSIjMWYxYTE3Ii8+CjxjaXJjbGUgY3g9IjQ0IiBjeT0iNDkiIHI9IjEuOCIgZmlsbD0iIzJhMmEyYSIvPjxjaXJjbGUgY3g9IjU2IiBjeT0iNDkiIHI9IjEuOCIgZmlsbD0iIzJhMmEyYSIvPjxwYXRoIGQ9Ik00NSA1NnE1IDQgMTAgMCIgc3Ryb2tlPSIjOWE1YTRhIiBzdHJva2Utd2lkdGg9IjEuOCIgZmlsbD0ibm9uZSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PC9zdmc+" },
+    4: { id: 4, first_name: "Аня", username: "anya", photo_url: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI2VlN2FhZSIvPjxwYXRoIGQ9Ik0yNyA1MGMwLTE4IDEwLTI5IDIzLTI5czIzIDExIDIzIDI5djE2SDI3eiIgZmlsbD0iI2UzYzA2YiIvPgo8cGF0aCBkPSJNMTggMTAwYzItMTggMTUtMjcgMzItMjdzMzAgOSAzMiAyN3oiIGZpbGw9IiM2YjNmYTAiLz48cmVjdCB4PSI0NCIgeT0iNjAiIHdpZHRoPSIxMiIgaGVpZ2h0PSIxNSIgcng9IjUiIGZpbGw9IiNmN2Q3YzEiLz4KPGVsbGlwc2UgY3g9IjUwIiBjeT0iNDciIHJ4PSIxNiIgcnk9IjE4IiBmaWxsPSIjZjdkN2MxIi8+PHBhdGggZD0iTTMyIDQ2YzAtMTQgOC0yMiAxOC0yMnMxOCA4IDE4IDIyYy00LTktMTEtMTEtMTgtMTFzLTE0IDItMTggMTF6IiBmaWxsPSIjZTNjMDZiIi8+CjxjaXJjbGUgY3g9IjQ0IiBjeT0iNDkiIHI9IjEuOCIgZmlsbD0iIzJhMmEyYSIvPjxjaXJjbGUgY3g9IjU2IiBjeT0iNDkiIHI9IjEuOCIgZmlsbD0iIzJhMmEyYSIvPjxwYXRoIGQ9Ik00NSA1NnE1IDQgMTAgMCIgc3Ryb2tlPSIjOWE1YTRhIiBzdHJva2Utd2lkdGg9IjEuOCIgZmlsbD0ibm9uZSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PC9zdmc+" },
+    5: { id: 5, first_name: "Дима", username: "dima", photo_url: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iIzdmYzc3ZiIvPgo8cGF0aCBkPSJNMTggMTAwYzItMTggMTUtMjcgMzItMjdzMzAgOSAzMiAyN3oiIGZpbGw9IiMzODRhOGMiLz48cmVjdCB4PSI0NCIgeT0iNjAiIHdpZHRoPSIxMiIgaGVpZ2h0PSIxNSIgcng9IjUiIGZpbGw9IiNkOWEyN2YiLz4KPGVsbGlwc2UgY3g9IjUwIiBjeT0iNDciIHJ4PSIxNiIgcnk9IjE4IiBmaWxsPSIjZDlhMjdmIi8+PHBhdGggZD0iTTMzIDQ0YzAtMTMgOC0yMCAxNy0yMHMxNyA3IDE3IDIwYy01LTYtMTAtOC0xNy04cy0xMiAyLTE3IDh6IiBmaWxsPSIjMmIyMTFiIi8+CjxjaXJjbGUgY3g9IjQ0IiBjeT0iNDkiIHI9IjEuOCIgZmlsbD0iIzJhMmEyYSIvPjxjaXJjbGUgY3g9IjU2IiBjeT0iNDkiIHI9IjEuOCIgZmlsbD0iIzJhMmEyYSIvPjxwYXRoIGQ9Ik00NSA1NnE1IDQgMTAgMCIgc3Ryb2tlPSIjOWE1YTRhIiBzdHJva2Utd2lkdGg9IjEuOCIgZmlsbD0ibm9uZSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PC9zdmc+" },
+    6: { id: 6, first_name: "Оля", username: "olya", photo_url: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI2E2OTVlNyIvPjxwYXRoIGQ9Ik0yNiA1MmMwLTIwIDEwLTMyIDI0LTMyczI0IDEyIDI0IDMydjMwSDI2eiIgZmlsbD0iIzRhMmExYSIvPgo8cGF0aCBkPSJNMTggMTAwYzItMTggMTUtMjcgMzItMjdzMzAgOSAzMiAyN3oiIGZpbGw9IiMyZjdmN2EiLz48cmVjdCB4PSI0NCIgeT0iNjAiIHdpZHRoPSIxMiIgaGVpZ2h0PSIxNSIgcng9IjUiIGZpbGw9IiNmM2NkYjAiLz4KPGVsbGlwc2UgY3g9IjUwIiBjeT0iNDciIHJ4PSIxNiIgcnk9IjE4IiBmaWxsPSIjZjNjZGIwIi8+PHBhdGggZD0iTTMyIDQ2YzAtMTQgOC0yMiAxOC0yMnMxOCA4IDE4IDIyYy02LTgtMTItMTAtMTgtMTBzLTEyIDItMTggMTB6IiBmaWxsPSIjNGEyYTFhIi8+CjxjaXJjbGUgY3g9IjQ0IiBjeT0iNDkiIHI9IjEuOCIgZmlsbD0iIzJhMmEyYSIvPjxjaXJjbGUgY3g9IjU2IiBjeT0iNDkiIHI9IjEuOCIgZmlsbD0iIzJhMmEyYSIvPjxwYXRoIGQ9Ik00NSA1NnE1IDQgMTAgMCIgc3Ryb2tlPSIjOWE1YTRhIiBzdHJva2Utd2lkdGg9IjEuOCIgZmlsbD0ibm9uZSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PC9zdmc+" },
   };
   window.Telegram = { WebApp: {
     initData: "query_id=demo&user=demo&hash=demo",
@@ -86,7 +86,7 @@
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
   const RECEIPT = {
-    place: "Warung Made", currency: "IDR", confidence: "high",
+    place: "Warung Pantai", currency: "IDR", confidence: "high",
     items: [
       { name: "Nasi Goreng Ayam", name_ru: "Наси горенг с курицей", quantity: 2, line_total: 130000 },
       { name: "Mie Goreng", name_ru: "Ми горенг", quantity: 1, line_total: 60000 },
@@ -155,7 +155,8 @@
   // хуки для сценария записи
   const poke = () => document.dispatchEvent(new Event("visibilitychange"));
   window.__demo = {
-    join(gid, uid) { const g = G(gid); g.members.push(P[uid]); bot(g, `${P[uid].first_name} присоединилась к группе`); poke(); },
+    lastGroup() { return groups[0].id; },
+    join(gid, uid) { const g = G(gid); g.members.push(P[uid]); bot(g, `${P[uid].first_name} ${[2, 4, 6].includes(uid) ? "присоединилась" : "присоединился"} к группе`); poke(); },
     confirmPending(gid) { const g = G(gid); for (const e of g.expenses) if (e.kind === "transfer" && e.pending) { e.pending = false; bot(g, `${P[e.to_user].first_name} подтвердила перевод от Вячеслава на ${rub(e.amount)}. Долг закрыт.`); } poke(); },
   };
 })();
