@@ -118,7 +118,9 @@ def v03(r: Rec):
         await r.tap(p.locator(".sheet .chip", has_text="INR"), 0.5)
         await r.type("#f-title", "Ужин на пляже", 70)
     async def b2():
-        await r.hl(".preview"); await r.w(3.0); await r.hl(".preview", False)
+        await r.scroll_to(".preview", "center"); await r.w(0.7)
+        await r.hl(".preview"); await r.w(2.6); await r.hl(".preview", False)
+        await r.scroll(0, ".sheet"); await r.w(0.5)
     async def b3():
         payer = p.locator(".sheet .field", has_text="Кто платил")
         await r.tap(payer.locator(".chip", has_text="Катя"), 0.6)
