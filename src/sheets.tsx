@@ -378,9 +378,9 @@ export function GroupSheet({ c, create }: { c: Ctx | (Omit<Ctx, "g"> & { g?: Gro
     setBusy(true);
     const fields = { name: nameV.trim(), emoji, photo, start_date: start || null, end_date: end || null, currency: cur, reminders, ...(g?.tg_chat_id ? { mirror_to_chat: mirror } : {}) };
     if (create) {
-      const res = await c.run("createGroup", fields, "Группа создана");
+      // после создания run() сам открывает шторку с приглашением — не закрываем её
+      await c.run("createGroup", fields, "Группа создана");
       setBusy(false);
-      if (res) c.close();
     } else {
       const res = await c.run("updateGroup", { id: g!.id, ...fields }, "Группа сохранена");
       setBusy(false);
