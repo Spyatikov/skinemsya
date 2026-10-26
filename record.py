@@ -7,7 +7,7 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 S = json.load(open(f"{ROOT}/voice/script.json", encoding="utf-8"))
 OUT = f"{ROOT}/render"; os.makedirs(OUT, exist_ok=True)
 VW, VH, Z = 900, 1560, 900 / 390
-GAP = 0.45
+GAP = 0.35
 
 def dur(vid, i, text):
     f = f"{ROOT}/{os.environ.get('AUDIO', 'voice/out')}/{vid}_{i:02d}.mp3"
@@ -70,11 +70,11 @@ def v01(r: Rec):
     async def b2():
         await r.scroll(420); await r.w(2.6); await r.scroll(900); await r.w(2.0)
     async def b3():
-        await r.scroll(0); await r.w(0.7)
+        await r.scroll(0); await r.w(0.4)
         for _ in range(3):
-            await r.tap('button[aria-label="Валюта итогов"]', 1.2)
-        await r.tap('button[aria-label="Валюта итогов"]', 0.35)
-        await r.tap('button[aria-label="Валюта итогов"]', 0.4)
+            await r.tap('button[aria-label="Валюта итогов"]', 0.85)
+        await r.tap('button[aria-label="Валюта итогов"]', 0.2)
+        await r.tap('button[aria-label="Валюта итогов"]', 0.1)
     async def b4():
         await r.w(0.9); await r.tap(p.locator(".row", has_text="Ужин в Jimbaran"), 1.6)
         await r.scroll(320, ".sheet"); await r.w(1.6)
