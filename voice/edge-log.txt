@@ -1,24 +1,8 @@
 fail voice/edge/03-rashod_01.mp3 NoAudioReceived('No audio was received. Please verify that your parameters are c
-fail voice/edge/03-rashod_03.mp3 NoAudioReceived('No audio was received. Please verify that your parameters are c
-fail voice/edge/05-raschet_00.mp3 NoAudioReceived('No audio was received. Please verify that your parameters are c
-round 0: left 3
+round 0: left 1
 fail voice/edge/03-rashod_01.mp3 NoAudioReceived('No audio was received. Please verify that your parameters are c
-fail voice/edge/03-rashod_03.mp3 NoAudioReceived('No audio was received. Please verify that your parameters are c
-fail voice/edge/05-raschet_00.mp3 NoAudioReceived('No audio was received. Please verify that your parameters are c
-round 1: left 3
+round 1: left 1
 fail voice/edge/03-rashod_01.mp3 NoAudioReceived('No audio was received. Please verify that your parameters are c
-fail voice/edge/03-rashod_03.mp3 NoAudioReceived('No audio was received. Please verify that your parameters are c
-fail voice/edge/05-raschet_00.mp3 NoAudioReceived('No audio was received. Please verify that your parameters are c
-round 2: left 3
-fail voice/edge/03-rashod_01.mp3 NoAudioReceived('No audio was received. Please verify that your parameters are c
-ok voice/edge/03-rashod_03.mp3
-ok voice/edge/05-raschet_00.mp3
-round 3: left 1
-fail voice/edge/03-rashod_01.mp3 NoAudioReceived('No audio was received. Please verify that your parameters are c
-round 4: left 1
-fail voice/edge/03-rashod_01.mp3 NoAudioReceived('No audio was received. Please verify that your parameters are c
-round 5: left 1
-fail voice/edge/03-rashod_01.mp3 NoAudioReceived('No audio was received. Please verify that your parameters are c
-round 6: left 1
-fail voice/edge/03-rashod_01.mp3 NoAudioReceived('No audio was received. Please verify that your parameters are c
-round 7: left 1
+round 2: left 1
+ok voice/edge/03-rashod_01.mp3
+round 3: left 0
