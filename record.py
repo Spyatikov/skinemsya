@@ -230,15 +230,19 @@ async def record(v, pw):
     beats = SCEN[vid](r)
     marks = []
     start = time.time()
+    now = lambda: time.time() - start
+    LEAD = 1.6
+    audio_end, act_end = -GAP, 0.0
     for i, (fn, text) in enumerate(zip(beats, v["beats"])):
         d = dur(vid, i, text)
-        bs = time.time()
+        a0 = max(audio_end + GAP, act_end - LEAD, 0.0)
+        if a0 > now(): await page.wait_for_timeout(int((a0 - now()) * 1000))
+        marks.append({"i": i, "start": a0, "dur": d, "text": text})
         try: await fn()
         except Exception:
             await page.screenshot(path=f"{OUT}/fail_{vid}_{i}.png"); raise
-        rest = d + GAP - (time.time() - bs)
-        if rest > 0: await page.wait_for_timeout(int(rest * 1000))
-        marks.append({"i": i, "start": bs - start, "dur": d, "text": text})
+        act_end, audio_end = now(), a0 + d
+    if audio_end + 0.5 > now(): await page.wait_for_timeout(int((audio_end + 0.5 - now()) * 1000))
     await page.wait_for_timeout(700)
     end = time.time()
     await cdp.send("Page.stopScreencast"); await page.wait_for_timeout(300)
