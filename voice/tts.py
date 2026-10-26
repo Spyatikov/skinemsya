@@ -1,13 +1,15 @@
 # Синтез озвучки для промо-роликов: по одному mp3 на каждую фразу.
-# Основной голос — нейросетевой Microsoft (edge-tts), запасной — Piper (офлайн-модель).
-import asyncio, json, os, subprocess, sys, urllib.request
+# Порядок: нейросетевой голос Microsoft (edge-tts) → Piper (офлайн-модель) → Google TTS.
+import asyncio, json, os, subprocess, sys, traceback, urllib.request
 
 S = json.load(open("voice/script.json", encoding="utf-8"))
 os.makedirs("voice/out", exist_ok=True)
 jobs = [(t, f"voice/out/{v['id']}_{i:02d}.mp3") for v in S["videos"] for i, t in enumerate(v["beats"])]
+only = os.environ.get("ENGINE", "")
 
 async def edge():
     import edge_tts
+    print("edge-tts", getattr(edge_tts, "__version__", "?"))
     for text, path in jobs:
         for attempt in range(4):
             try:
@@ -25,14 +27,24 @@ def piper():
         urllib.request.urlretrieve(base + suf, "voice.onnx" + suf)
     for text, path in jobs:
         wav = path.replace(".mp3", ".wav")
-        subprocess.run(["piper", "-m", "voice.onnx", "-f", wav], input=text.encode(), check=True)
+        r = subprocess.run([sys.executable, "-m", "piper", "-m", "voice.onnx", "-f", wav, "--", text], capture_output=True, text=True)
+        if r.returncode:  # старый интерфейс: текст со стандартного ввода
+            print(r.stderr[-500:])
+            subprocess.run(["piper", "-m", "voice.onnx", "-f", wav], input=text.encode(), check=True)
         subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", wav, "-b:a", "160k", path], check=True)
         os.remove(wav); print("piper ok", path)
-    open("voice/out/ENGINE", "w").write("piper")
 
-try:
-    asyncio.run(edge())
-    open("voice/out/ENGINE", "w").write("edge")
-except Exception as e:
-    print("edge-tts unavailable:", e, "— switching to piper")
-    piper()
+def gtts():
+    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "gTTS"], check=True)
+    from gtts import gTTS
+    for text, path in jobs:
+        gTTS(text, lang="ru").save(path); print("gtts ok", path)
+
+for name, fn in [("edge", lambda: asyncio.run(edge())), ("piper", piper), ("gtts", gtts)]:
+    if only and name != only: continue
+    try:
+        fn(); open("voice/out/ENGINE", "w").write(name); print("DONE with", name); break
+    except Exception:
+        print(f"--- {name} failed ---"); traceback.print_exc()
+else:
+    sys.exit(1)
