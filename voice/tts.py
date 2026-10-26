@@ -11,12 +11,14 @@ async def edge():
     import edge_tts
     print("edge-tts", getattr(edge_tts, "__version__", "?"))
     for text, path in jobs:
-        for attempt in range(4):
+        for attempt in range(6):
             try:
-                await edge_tts.Communicate(text, S["voice"], rate=S["rate"]).save(path)
+                t = text if attempt < 2 else text.replace(" — ", ", ").replace("«", "").replace("»", "")
+                await edge_tts.Communicate(t, S["voice"], rate=S["rate"]).save(path)
+                await asyncio.sleep(1.2)
                 print("edge ok", path); break
             except Exception as e:
-                print("retry", path, repr(e)); await asyncio.sleep(4)
+                print("retry", path, repr(e)); await asyncio.sleep(6 + attempt * 4)
         else:
             raise RuntimeError("edge failed")
 
