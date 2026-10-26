@@ -15,12 +15,12 @@ export async function setupBot(selfUrl: string) {
   const secret = await webhookSecret();
   const results: Record<string, unknown> = {};
   results.webhook = await tgApi("setWebhook", {
-    url: selfUrl, secret_token: secret, allowed_updates: ["message", "my_chat_member"], drop_pending_updates: false,
+    url: selfUrl, secret_token: secret, allowed_updates: ["message", "my_chat_member", "callback_query"], drop_pending_updates: false,
   });
   results.menu = await tgApi("setChatMenuButton", { menu_button: { type: "web_app", text: "Запустить", web_app: { url: APP_URL } } });
   results.cmdPrivate = await tgApi("setMyCommands", {
     scope: { type: "all_private_chats" },
-    commands: [{ command: "start", description: "Открыть Скинемся" }, { command: "help", description: "Как пользоваться" }],
+    commands: [{ command: "start", description: "Открыть Скинемся" }, { command: "help", description: "Инструкция и видеоуроки" }],
   });
   results.cmdGroups = await tgApi("setMyCommands", {
     scope: { type: "all_group_chats" },
@@ -42,7 +42,64 @@ const HELP_GROUP =
   "• <code>+45 eur ужин @masha</code> — в евро, делится между тобой и Машей\n" +
   "• <code>/add 1200 такси</code> — то же самое командой\n" +
   "• <code>/itog</code> — кто кому сколько должен\n\n" +
-  "Платит тот, кто написал сообщение.";
+  "Платит тот, кто написал сообщение.\n\n" +
+  `📖 <a href="https://t.me/${BOT_USERNAME}?start=help">Инструкция с видеоуроками</a> — в личке бота.`;
+
+// ---------- инструкция и видеоуроки ----------
+const VIDEOS: { key: string; file: string; title: string }[] = [
+  { key: "obzor", file: "01-obzor", title: "👀 Обзор" },
+  { key: "gruppa", file: "02-gruppa", title: "👥 Группа и друзья" },
+  { key: "rashod", file: "03-rashod", title: "💱 Расход в валюте" },
+  { key: "chek", file: "04-chek", title: "🧾 Скан чека" },
+  { key: "raschet", file: "05-raschet", title: "💸 Расчёт и долги" },
+  { key: "chat", file: "06-chat", title: "💬 Чат и бот" },
+  { key: "full", file: "full", title: "🎬 Всё сразу · 3,5 мин" },
+];
+const GUIDE =
+  "<b>Как пользоваться Скинемся</b>\n\n" +
+  "<b>1. Создай группу.</b> Нажми «Запустить» → «Создать группу»: название, даты и основная валюта поездки.\n\n" +
+  "<b>2. Позови друзей.</b> Кнопка «Позвать» даст ссылку. Кто откроет её в Telegram, сразу попадёт в группу — регистрация не нужна.\n\n" +
+  "<b>3. Записывай траты.</b> Кнопка «+» внизу: сумма, валюта, кто платил и на кого делим — поровну или долями. Курс подставится сам.\n\n" +
+  "<b>4. Сканируй чеки.</b> «Скан чека» → фото. ИИ разберёт позиции, а каждый отметит, что ел. Сервис и налог поделятся пропорционально.\n\n" +
+  "<b>5. Рассчитайтесь.</b> «Расчёт» покажет минимум переводов. Перевёл — жми «Оплачено», долг закроется, когда получатель подтвердит.\n\n" +
+  "<b>6. Пиши траты в чат.</b> Во вкладке «Чат» или в чате поездки в Telegram (добавь меня туда): <code>+1200 такси</code>, <code>+45 eur ужин</code>, а <code>/итог</code> покажет долги.\n\n" +
+  "👇 Видеоуроки по каждому шагу:";
+const guideMarkup = () => ({
+  inline_keyboard: [
+    ...VIDEOS.slice(0, 6).reduce((rows: { text: string; callback_data: string }[][], v, i) => {
+      if (i % 2 === 0) rows.push([]);
+      rows[rows.length - 1].push({ text: v.title, callback_data: "vid:" + v.key });
+      return rows;
+    }, []),
+    [{ text: VIDEOS[6].title, callback_data: "vid:full" }],
+    [{ text: "🚀 Запустить Скинемся", web_app: { url: APP_URL } }],
+  ],
+});
+async function sendVideo(chatId: number, key: string) {
+  const v = VIDEOS.find((x) => x.key === key);
+  if (!v) return;
+  await tgApi("sendChatAction", { chat_id: chatId, action: "upload_video" });
+  // file_id после первой отправки храним, чтобы Telegram не скачивал видео заново
+  const { data: cached } = await db.from("app_config").select("value").eq("key", "video:" + v.file).maybeSingle();
+  const base = APP_URL.replace(/\/?$/, "/") + "video/";
+  const body = {
+    chat_id: chatId, caption: `<b>${v.title}</b>`, parse_mode: "HTML", supports_streaming: true, width: 1080, height: 1920,
+    reply_markup: { inline_keyboard: [[{ text: "🚀 Запустить Скинемся", web_app: { url: APP_URL } }]] },
+  };
+  let r = cached?.value ? await tgApi<{ video?: { file_id: string } }>("sendVideo", { ...body, video: cached.value }) : { ok: false };
+  if (!r.ok) {
+    r = await tgApi<{ video?: { file_id: string } }>("sendVideo", { ...body, video: `${base}${v.file}.mp4?v=1` });
+    const fid = (r as { result?: { video?: { file_id: string } } }).result?.video?.file_id;
+    if (fid) await db.from("app_config").upsert({ key: "video:" + v.file, value: fid });
+  }
+  if (!r.ok) await tgApi("sendMessage", { chat_id: chatId, text: `Не получилось отправить видео. Его можно посмотреть по ссылке: ${base}${v.file}.mp4` });
+}
+async function handleCallback(q: { id: string; data?: string; message?: { chat: { id: number } }; from: { id: number } }) {
+  await tgApi("answerCallbackQuery", { callback_query_id: q.id });
+  const chatId = q.message?.chat.id ?? q.from.id;
+  if (q.data === "guide") { await tgApi("sendMessage", { chat_id: chatId, text: GUIDE, parse_mode: "HTML", reply_markup: guideMarkup() }); return; }
+  if (q.data?.startsWith("vid:")) await sendVideo(chatId, q.data.slice(4));
+}
 
 const appButton = (text = "Запустить Скинемся") => ({ inline_keyboard: [[{ text, web_app: { url: APP_URL } }]] });
 const urlButton = (url: string, text = "Открыть Скинемся") => ({ inline_keyboard: [[{ text, url }]] });
@@ -68,6 +125,7 @@ const reply = (m: TgMessage, html: string, markup?: unknown) =>
   tgApi("sendMessage", { chat_id: m.chat.id, text: html, parse_mode: "HTML", reply_parameters: { message_id: m.message_id, allow_sending_without_reply: true }, ...(markup ? { reply_markup: markup } : {}), disable_web_page_preview: true });
 
 export async function handleUpdate(u: Record<string, any>) {
+  if (u.callback_query) return handleCallback(u.callback_query);
   // бота добавили в группу без кода привязки
   if (u.my_chat_member) {
     const cm = u.my_chat_member;
@@ -99,11 +157,12 @@ async function handlePrivate(m: TgMessage, text: string) {
       return;
     }
   }
-  if (/^\/help/.test(text)) {
-    await reply(m, "<b>Скинемся</b> считает общие траты в поездках.\n\n1. Открой приложение и создай группу.\n2. Позови друзей по ссылке из приложения.\n3. Записывай траты в любой валюте или сканируй чеки.\n4. Во вкладке «Расчёт» видно, кто кому сколько переводит.\n\nМеня можно добавить в чат поездки: там траты пишутся сообщениями вида «+1200 такси».", appButton());
+  if (/^\/(help|guide|instr)/.test(text) || /^\/start\s+help/.test(text) || /инструкц|помощ|как пользоваться/i.test(text)) {
+    await reply(m, GUIDE, guideMarkup());
     return;
   }
-  await reply(m, `Привет, ${esc(m.from!.first_name)}! 👋\n\nЯ помогаю делить общие траты в поездках: валюты, чеки и кто кому сколько должен. Жми кнопку, чтобы начать.`, appButton());
+  await reply(m, `Привет, ${esc(m.from!.first_name)}! 👋\n\nЯ помогаю делить общие траты в поездках: валюты, чеки и кто кому сколько должен.\n\nЖми «Запустить», а если впервые здесь — загляни в инструкцию: там короткие видеоуроки.`,
+    { inline_keyboard: [[{ text: "🚀 Запустить Скинемся", web_app: { url: APP_URL } }], [{ text: "📖 Инструкция и видео", callback_data: "guide" }]] });
 }
 
 // ---------- групповой чат ----------
