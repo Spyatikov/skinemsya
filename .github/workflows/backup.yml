@@ -1,0 +1,68 @@
+name: Ночной бэкап базы
+# Каждую ночь: полная выгрузка схемы public (все таблицы с данными) → шифрование паролем → артефакт на 30 дней.
+# Нужны секреты репозитория: SUPABASE_DB_URL (строка Session pooler) и BACKUP_PASSWORD. Инструкция: docs/BACKUP.md
+on:
+  schedule:
+    - cron: "17 0 * * *" # 03:17 по Москве
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Проверить секреты
+        env:
+          DB: ${{ secrets.SUPABASE_DB_URL }}
+          PW: ${{ secrets.BACKUP_PASSWORD }}
+        run: |
+          if [ -z "$DB" ] || [ -z "$PW" ]; then
+            echo "::error::Не заданы секреты SUPABASE_DB_URL и/или BACKUP_PASSWORD. См. docs/BACKUP.md"
+            exit 1
+          fi
+          if [ ${#PW} -lt 12 ]; then echo "::error::BACKUP_PASSWORD короче 12 символов"; exit 1; fi
+
+      - name: Установить pg_dump 17
+        run: |
+          sudo apt-get install -y -q postgresql-common >/dev/null
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y >/dev/null
+          sudo apt-get install -y -q postgresql-client-17 >/dev/null
+          /usr/lib/postgresql/17/bin/pg_dump --version
+
+      - name: Выгрузить и зашифровать
+        env:
+          DB: ${{ secrets.SUPABASE_DB_URL }}
+          PW: ${{ secrets.BACKUP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          export PATH=/usr/lib/postgresql/17/bin:$PATH
+          STAMP=$(TZ=Europe/Moscow date +%Y-%m-%d_%H%M)
+          echo "STAMP=$STAMP" >> "$GITHUB_ENV"
+          mkdir -p out
+          pg_dump "$DB" --schema=public --no-owner --no-privileges --format=custom --compress=9 --file=dump.pgc
+          # быстрая проверка, что дамп читается
+          pg_restore --list dump.pgc > /dev/null
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$PW" --symmetric --cipher-algo AES256 \
+              --output "out/skinemsya_${STAMP}.pgc.gpg" dump.pgc
+          rm -f dump.pgc
+          # в отчёт — только размеры и число строк, без самих данных
+          {
+            echo "### Бэкап ${STAMP}"
+            echo "Размер (зашифрованный): $(du -h out/*.gpg | cut -f1)"
+            echo ""
+            echo "| Таблица | Строк |"
+            echo "|---|---|"
+            psql "$DB" -At -F '|' -c "select relname, n_live_tup from pg_stat_user_tables where schemaname='public' order by relname" \
+              | sed 's/^/| /; s/$/ |/'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Сохранить артефакт
+        uses: actions/upload-artifact@v4
+        with:
+          name: skinemsya-db-${{ env.STAMP }}
+          path: out/*.gpg
+          retention-days: 30
+          if-no-files-found: error
