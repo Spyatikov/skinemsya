@@ -1,10 +1,10 @@
 // Шторки: новый/изменение расхода, скан чека, детали траты, настройки группы, приглашение.
 import { useMemo, useRef, useState } from "react";
-import { BOT_USERNAME, inviteLink } from "./config";
+import { BOT_USERNAME } from "./config";
 import { type Expense, type Group, type ReceiptItem, type Split, nf, onN, parseAmount, plural, rubOf, shares } from "./money";
 import { CATALOG, CUR, DEFAULT_CURS, inBase, money, rateLabel, rateOf, sym } from "./rates";
 import { parseReceipt, recognize, recognizeAI } from "./receipt";
-import { shareLink, tg } from "./telegram";
+import { allowVkMessages, copyText, inviteKinds, inviteLink, type LinkKind, openLink, platform, platformInfo, share, vkMessagesAvailable } from "./platform";
 import { Avatar, CATS, Fly, GroupImg, Ico, Pen, SheetHead, catName, dayName, guessCat, todayISO } from "./ui";
 
 export type Ctx = {
@@ -422,7 +422,10 @@ export function GroupSheet({ c, create }: { c: Ctx | (Omit<Ctx, "g"> & { g?: Gro
         <input type="checkbox" id="f-remind" checked={reminders} onChange={(e) => setReminders(e.target.checked)} />
         <i aria-hidden="true" />
       </label>
-      {g && <div className="field"><span className="flabel">Чат Telegram</span>
+      {vkMessagesAvailable && reminders && <button className="linkbtn" style={{ alignSelf: "flex-start" }} onClick={async () => {
+        c.toast((await allowVkMessages()) ? "Напоминания будут приходить в сообщения ВК" : "Без разрешения напоминания не придут");
+      }}>Разрешить сообщения от «Скинемся» во ВКонтакте</button>}
+      {g && (platform === "telegram" || g.tg_chat_id) && <div className="field"><span className="flabel">Чат Telegram</span>
         {g.tg_chat_id ? (
           <div className="box"><div className="pp">
             <span className="ico"><svg viewBox="0 0 24 24"><path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-5 4z" /></svg></span>
@@ -439,8 +442,7 @@ export function GroupSheet({ c, create }: { c: Ctx | (Omit<Ctx, "g"> & { g?: Gro
           </label>
         ) : <>
           <button className="btn ghost wide" onClick={() => {
-            const url = `https://t.me/${BOT_USERNAME}?startgroup=${g.invite_code}`;
-            if (tg) tg.openTelegramLink(url); else window.open(url, "_blank");
+            openLink(`https://t.me/${BOT_USERNAME}?startgroup=${g.invite_code}`);
           }}>Подключить чат Telegram</button>
           <span style={{ color: "var(--muted)", fontSize: 13 }}>Выбери чат поездки, бот присоединится к нему. Траты можно будет писать прямо в чате: «+1200 такси», «/itog» покажет расчёт.</span>
         </>}
@@ -454,10 +456,13 @@ export function GroupSheet({ c, create }: { c: Ctx | (Omit<Ctx, "g"> & { g?: Gro
 
 // ---------- приглашение ----------
 export function InviteSheet({ c }: { c: Ctx }) {
-  const link = inviteLink(c.g.invite_code);
+  const kinds = inviteKinds();
+  const [kind, setKind] = useState<LinkKind>(kinds[0] ?? "telegram");
+  const link = inviteLink(c.g.invite_code, kind);
+  const where = kind === "vk" ? "ВКонтакте" : "Telegram";
   const copy = async () => {
-    try { await navigator.clipboard.writeText(link); c.toast("Ссылка скопирована"); }
-    catch {
+    if (await copyText(link)) c.toast("Ссылка скопирована");
+    else {
       const el = document.getElementById("invlink");
       if (el) { const r = document.createRange(); r.selectNodeContents(el); const s = getSelection(); s?.removeAllRanges(); s?.addRange(r); }
       c.toast("Ссылка выделена, скопируй её вручную");
@@ -466,9 +471,14 @@ export function InviteSheet({ c }: { c: Ctx }) {
   return (
     <>
       <SheetHead title="Позвать друзей" onClose={c.close} />
-      <p style={{ margin: 0, color: "var(--muted)" }}>Отправь ссылку друзьям. Кто откроет её в Telegram, сразу попадёт в группу «{c.g.name}». Имя и аватарку подставит Telegram.</p>
+      <p style={{ margin: 0, color: "var(--muted)" }}>Отправь ссылку друзьям. Кто откроет её {kind === "vk" ? "во" : "в"} {where}, сразу попадёт в группу «{c.g.name}». Имя и аватарку подставит {where}.</p>
+      {kinds.length > 1 && <div className="seg">
+        {kinds.map((k) => <button key={k} aria-pressed={kind === k} onClick={() => setKind(k)}>{k === "vk" ? "Для ВКонтакте" : "Для Telegram"}</button>)}
+      </div>}
       <div className="invite" id="invlink">{link}</div>
-      <button className="btn wide" onClick={() => shareLink(link, `Присоединяйся к группе «${c.g.name}» в Скинемся — считаем общие траты`)}>Отправить в Telegram</button>
+      {kind === platform
+        ? <button className="btn wide" onClick={() => share(link, `Присоединяйся к группе «${c.g.name}» в Скинемся — считаем общие траты`)}>Отправить {kind === "vk" ? "во ВКонтакте" : "в Telegram"}</button>
+        : <p className="note" style={{ margin: 0 }}>Друзья из {kind === "vk" ? "ВКонтакте" : "Telegram"} окажутся в той же группе, что и вы: траты и долги общие.</p>}
       <button className="btn ghost wide" onClick={copy}>Скопировать ссылку</button>
       <div className="field"><span className="flabel">Уже в группе · {c.g.members.length} чел.</span><div className="box">
         {c.g.members.map((m) => <div className="pp" key={m.id}><Avatar p={m} size="sm" me={c.me} /><span>{m.id === c.me ? `${m.first_name} (ты)` : m.first_name}</span></div>)}
@@ -502,9 +512,10 @@ export function HelpSheet({ c }: { c: Omit<Ctx, "g"> & { g?: Group } }) {
   async function send() {
     if (text.trim().length < 3 || busy) return;
     setBusy(true);
+    if (vkMessagesAvailable) await allowVkMessages(); // чтобы ответ поддержки смог прийти в сообщения ВК
     const ok = await c.run("feedback", {
       text, group_id: c.g?.id ?? null, screenshot: shot ? shot.split(",")[1] : undefined,
-      context: { group: c.g?.name ?? "", platform: `${tg?.platform ?? "web"} · Telegram ${tg?.version ?? "?"} · ${navigator.userAgent.slice(0, 120)}` },
+      context: { group: c.g?.name ?? "", platform: `${platformInfo()} · ${navigator.userAgent.slice(0, 120)}` },
     }, "Сообщение отправлено");
     setBusy(false);
     if (ok) setSent(true);
@@ -512,7 +523,7 @@ export function HelpSheet({ c }: { c: Omit<Ctx, "g"> & { g?: Group } }) {
   if (sent) return (
     <>
       <SheetHead title="Спасибо!" onClose={c.close} />
-      <p style={{ margin: 0, color: "var(--muted)" }}>Сообщение ушло разработчику. Ответ придёт от бота @{BOT_USERNAME} в личные сообщения.</p>
+      <p style={{ margin: 0, color: "var(--muted)" }}>Сообщение ушло разработчику. {platform === "vk" ? (vkMessagesAvailable ? "Ответ придёт в сообщения ВКонтакте от сообщества «Скинемся»." : "Мы прочитаем его и учтём в следующих обновлениях.") : <>Ответ придёт от бота @{BOT_USERNAME} в личные сообщения.</>}</p>
       <button className="btn wide" onClick={c.close}>Готово</button>
     </>
   );

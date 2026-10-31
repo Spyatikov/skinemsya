@@ -2,7 +2,7 @@
 // Поездка считается законченной на следующий день после даты окончания,
 // а если дата не указана — когда в группе 3 дня нет новых трат.
 // Каждому должнику пишем не чаще раза в 2 дня и не больше 5 раз на группу.
-import { db, esc, groupLink, groupPlan, rub, tgApi } from "./shared.ts";
+import { db, esc, groupPlan, notifyUser, rub } from "./shared.ts";
 
 const DAY = 864e5;
 const EVERY_DAYS = 2, MAX_TIMES = 5, IDLE_DAYS = 3;
@@ -43,11 +43,8 @@ export async function runReminders() {
       const lines = debts.map((d) => `• ${esc(names[d.to] ?? "участнику")} — <b>${rub(d.rub)}</b>`).join("\n");
       const text = `⏰ Поездка «${esc(g.name)}» закончилась, пора рассчитаться.\n\nТвои переводы:\n${lines}\n\n` +
         `Когда переведёшь, нажми «Оплачено» во вкладке «Расчёт» — долг закроется после подтверждения получателя.`;
-      const r = await tgApi("sendMessage", {
-        chat_id: debtor, text, parse_mode: "HTML",
-        reply_markup: { inline_keyboard: [[{ text: "Открыть расчёт", url: groupLink(g.invite_code) }]] },
-      });
-      if (r.ok) { await db.from("reminder_log").insert({ group_id: g.id, user_id: debtor }); sent++; }
+      const ok = await notifyUser(debtor, text, { text: "Открыть расчёт", code: g.invite_code });
+      if (ok) { await db.from("reminder_log").insert({ group_id: g.id, user_id: debtor }); sent++; }
     }
     if (sent) report.push({ group: g.name, sent });
   }

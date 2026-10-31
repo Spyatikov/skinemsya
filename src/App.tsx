@@ -5,7 +5,8 @@ import { type Expense, type Group, myStats, nets, onN, pairCount, parseAmount, p
 import { CATALOG, compact, inBase, inBaseShort, loadRates, money, rateOf, ratesDate, sym } from "./rates";
 import { StatsSheet } from "./stats";
 import { AddSheet, type Ctx, DetailSheet, GroupSheet, HelpSheet, InviteSheet, ScanSheet, type Sheet, defaultCurs } from "./sheets";
-import { haptic, inTelegram, initTelegram, tg } from "./telegram";
+import { firstName, haptic, inApp, initPlatform, startCode } from "./platform";
+import { BOT_USERNAME, VK_APP_ID } from "./config";
 import { Avatar, Fly, GroupImg, Ico, catName, dayName, guessCat, relDay, richText, todayISO, tripDates } from "./ui";
 
 type Tab = "groups" | "feed" | "balances" | "chat";
@@ -46,11 +47,9 @@ export default function App() {
 
   // первый запуск
   useEffect(() => {
-    initTelegram();
     loadRates().then(() => setRatesTick((x) => x + 1));
-    if (!inTelegram || !API_URL) return;
-    const join = new URLSearchParams(location.search).get("join") || undefined;
-    reload(join, true).then((r) => { if (r?.admin && new URLSearchParams(location.search).has("stats")) setSheet({ kind: "stats" }); });
+    if (!inApp || !API_URL) { initPlatform(); return; }
+    initPlatform().then(() => reload(startCode(), true)).then((r) => { if (r?.admin && new URLSearchParams(location.search).has("stats")) setSheet({ kind: "stats" }); });
   }, [reload]);
 
   // обновляем данные, пока приложение открыто: изменения друзей появятся сами
@@ -90,11 +89,13 @@ export default function App() {
   const ctx: Ctx | null = g ? { g, me, base, curs, ai, addCur, run, close, open: setSheet, toast } : null;
 
   // ---------- экраны-заглушки ----------
-  if (!inTelegram) return (
+  if (!inApp) return (
     <main><div className="wrap"><div className="center">
       <img className="logo" src={`${import.meta.env.BASE_URL}logo.png`} alt="Скинемся" />
       <h2>Скинемся</h2>
-      <p>Это приложение для Telegram: общие траты в поездках с друзьями. Открой его через бота в Telegram, чтобы войти под своим аккаунтом.</p>
+      <p>Общие траты в поездках с друзьями. Приложение открывается внутри Telegram или ВКонтакте — там тебя узнают по аккаунту.</p>
+      {VK_APP_ID && <a className="btn" href={`https://vk.com/app${VK_APP_ID}${location.search.includes("join=") ? "#" + new URLSearchParams(location.search).get("join") : ""}`}>Открыть во ВКонтакте</a>}
+      {BOT_USERNAME && <a className="btn ghost" href={`https://t.me/${BOT_USERNAME}/app`}>Открыть в Telegram</a>}
     </div></div></main>
   );
   if (!API_URL) return <Center title="Сервер ещё не подключён" text="В сборке не задан адрес серверной функции. Добавь VITE_API_URL в настройки сборки." />;
@@ -109,7 +110,7 @@ export default function App() {
       {!g ? (
         <main><div className="wrap"><div className="center">
           <img className="logo" src={`${import.meta.env.BASE_URL}logo.png`} alt="Скинемся" />
-          <h2>Привет, {tg?.initDataUnsafe.user?.first_name ?? "путешественник"}!</h2>
+          <h2>Привет, {firstName() ?? "путешественник"}!</h2>
           <p>Создай группу для поездки и позови друзей по ссылке. Траты, валюты и долги посчитаются сами.</p>
           <button className="btn" onClick={() => setSheet({ kind: "group", create: true })}>Создать группу</button>
           <p style={{ fontSize: 13 }}>Если друг уже создал группу, попроси у него ссылку-приглашение и открой её.</p>
@@ -354,7 +355,7 @@ function Chat({ c, onTab }: { c: Ctx; onTab: (t: Tab) => void }) {
         const rate = rateOf(cur), rub = amount * rate;
         if (!amount) { ok = await c.run("sendMessage", { group_id: g.id, text: t, botText: HELP }); }
         else {
-          const botText = `Записал **${title[0].toUpperCase() + title.slice(1)}**: ${money(amount, cur)}${cur !== c.base ? ", это примерно " + inBase(rub, c.base) : ""}.\nПлатил(а) ${tg?.initDataUnsafe.user?.first_name ?? "автор"}, делим ${onN(members.length)} по ${inBase(rub / members.length, c.base)}.`;
+          const botText = `Записал **${title[0].toUpperCase() + title.slice(1)}**: ${money(amount, cur)}${cur !== c.base ? ", это примерно " + inBase(rub, c.base) : ""}.\nПлатил(а) ${firstName() ?? "автор"}, делим ${onN(members.length)} по ${inBase(rub / members.length, c.base)}.`;
           ok = await c.run("sendMessage", { group_id: g.id, text: t })
             && await c.run("addExpense", { group_id: g.id, title: title[0].toUpperCase() + title.slice(1), category: guessCat(title), amount, currency: cur, rate, payer: c.me, split: { type: "equal", members }, source: "chat", spent_on: todayISO(), botText });
         }

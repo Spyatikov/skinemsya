@@ -1,5 +1,5 @@
 import { API_URL, SUPABASE_ANON_KEY } from "./config";
-import { tg } from "./telegram";
+import { authPayload } from "./platform";
 import type { Group } from "./money";
 
 export type LoadResult = { me: number; joined: string | null; groups: Group[]; ai?: boolean; bot?: string; admin?: boolean };
@@ -10,7 +10,7 @@ export async function call<T = { ok: true }>(action: string, payload: Record<str
   if (SUPABASE_ANON_KEY) headers.apikey = SUPABASE_ANON_KEY;
   let res: Response;
   try {
-    res = await fetch(API_URL, { method: "POST", headers, body: JSON.stringify({ initData: tg?.initData ?? "", action, ...payload }) });
+    res = await fetch(API_URL, { method: "POST", headers, body: JSON.stringify({ ...authPayload(), action, ...payload }) });
   } catch {
     throw new Error("Нет связи с сервером. Проверь интернет.");
   }

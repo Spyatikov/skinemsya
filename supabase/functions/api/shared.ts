@@ -7,6 +7,40 @@ export const APP_URL = Deno.env.get("APP_URL") ?? "https://spyatikov.github.io/s
 export const APP_LINK = `https://t.me/${BOT_USERNAME}/app`;
 export const ADMIN_ID = Number(Deno.env.get("ADMIN_TG_ID") ?? "233119782"); // кому приходят обращения из «Помощи»
 
+// ---------- ВКонтакте ----------
+// Пользователи ВК хранятся с отрицательным id: -vk_user_id. Так id из Telegram и ВК никогда не пересекаются.
+export const VK_APP_ID = Deno.env.get("VK_APP_ID") ?? "";
+export const VK_APP_SECRET = Deno.env.get("VK_APP_SECRET") ?? ""; // «Защищённый ключ» мини-приложения
+export const VK_GROUP_TOKEN = Deno.env.get("VK_GROUP_TOKEN") ?? ""; // ключ сообщества с правом сообщений (необязательно)
+export const ADMIN_VK_ID = Number(Deno.env.get("ADMIN_VK_ID") ?? "0");
+export const isAdmin = (id: number) => id === ADMIN_ID || (ADMIN_VK_ID > 0 && id === -ADMIN_VK_ID);
+export const isVkUser = (id: number) => id < 0;
+export const vkAppLink = (code?: string) => (VK_APP_ID ? `https://vk.com/app${VK_APP_ID}${code ? "#" + code : ""}` : "");
+
+export async function vkApi<T = unknown>(method: string, params: Record<string, string | number>): Promise<{ response?: T; error?: { error_code: number; error_msg: string } }> {
+  if (!VK_GROUP_TOKEN) return { error: { error_code: 0, error_msg: "no VK_GROUP_TOKEN" } };
+  const body = new URLSearchParams({ ...Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)])), access_token: VK_GROUP_TOKEN, v: "5.199" });
+  try { return await (await fetch(`https://api.vk.com/method/${method}`, { method: "POST", body })).json(); }
+  catch (e) { return { error: { error_code: -1, error_msg: String(e) } }; }
+}
+const htmlToText = (s: string) => s.replace(/<br\s*\/?>/g, "\n").replace(/<[^>]+>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+
+/** Личное сообщение пользователю на его платформе. Telegram — от бота, ВК — от сообщества (если оно подключено и пользователь разрешил). */
+export async function notifyUser(id: number, html: string, button?: { text: string; code?: string }) {
+  if (!isVkUser(id)) {
+    const url = button?.code ? groupLink(button.code) : APP_LINK;
+    const r = await tgApi("sendMessage", { chat_id: id, text: html, parse_mode: "HTML", disable_web_page_preview: true, ...(button ? { reply_markup: { inline_keyboard: [[{ text: button.text, url }]] } } : {}) });
+    return r.ok;
+  }
+  const link = vkAppLink(button?.code);
+  const r = await vkApi("messages.send", {
+    user_id: -id, random_id: Math.floor(Math.random() * 2 ** 31),
+    message: htmlToText(html) + (button && link ? `\n\n${button.text}: ${link}` : ""), dont_parse_links: 0,
+  });
+  if (r.error) console.error("vk messages.send", -id, r.error.error_msg);
+  return !r.error;
+}
+
 export const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
   auth: { persistSession: false },
 });

@@ -1,7 +1,7 @@
 // Вебхук бота: личные сообщения, групповые чаты Telegram, ответы на обращения из «Помощи».
 import {
   ADMIN_ID, APP_URL, BOT_TOKEN, BOT_USERNAME, db, esc, groupLink, guessCat, mdToHtml, money, onN, parseExpense,
-  planText, rateOf, rub, tgApi,
+  notifyUser, planText, rateOf, rub, tgApi,
 } from "./shared.ts";
 
 /** секрет вебхука выводим из токена, чтобы не заводить ещё один секрет */
@@ -152,8 +152,10 @@ async function handlePrivate(m: TgMessage, text: string) {
   if (m.from!.id === ADMIN_ID && m.reply_to_message) {
     const { data: fb } = await db.from("feedback").select("id,user_id").eq("admin_msg_id", m.reply_to_message.message_id).maybeSingle();
     if (fb) {
-      const r = await tgApi("sendMessage", { chat_id: fb.user_id, parse_mode: "HTML", text: `💬 <b>Ответ от разработчика Скинемся</b>\n\n${esc(text || m.caption || "")}` });
-      await reply(m, r.ok ? "Ответ отправлен." : `Не получилось отправить: ${esc(String(r.description ?? ""))}. Возможно, человек не запускал бота.`);
+      const ok = await notifyUser(fb.user_id, `💬 <b>Ответ от разработчика Скинемся</b>\n\n${esc(text || m.caption || "")}`);
+      await reply(m, ok ? "Ответ отправлен." : fb.user_id < 0
+        ? "Не получилось отправить во ВКонтакте: не подключено сообщество или человек не разрешил сообщения."
+        : "Не получилось отправить. Возможно, человек не запускал бота.");
       return;
     }
   }
@@ -180,7 +182,8 @@ export function statsText(s: any) {
   return `📊 <b>Скинемся · статистика</b>\n\n` +
     `<b>Пользователи:</b> ${n(u.total)} (+${n(u.new_today)} сегодня, +${n(u.new_7d)} за неделю)\n` +
     `Активны: сегодня ${n(u.dau)} · за 7 дней ${n(u.wau)} · за 30 дней ${n(u.mau)}\n` +
-    `Вернулись повторно: ${n(u.returning)} (${pct(u.returning, u.total)})\n\n` +
+    `Вернулись повторно: ${n(u.returning)} (${pct(u.returning, u.total)})\n` +
+    `Telegram ${n(u.platforms?.telegram)} · ВКонтакте ${n(u.platforms?.vk)}\n\n` +
     `<b>Группы:</b> ${n(g.total)} (+${n(g.new_7d)} за неделю)\n` +
     `С друзьями: ${n(g.with_friends)} · с тратами: ${n(g.with_expenses)} · с чатом Telegram: ${n(g.chat_linked)}\n\n` +
     `<b>Траты:</b> ${n(e.total)} (+${n(e.new_7d)} за неделю) на ${n(e.sum_rub)} ₽\n` +

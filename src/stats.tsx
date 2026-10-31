@@ -8,7 +8,7 @@ import { SheetHead } from "./ui";
 type Day = { day: string; active: number; new_users: number; expenses: number; groups: number };
 type Stats = {
   today: string;
-  users: { total: number; new_today: number; new_7d: number; new_30d: number; dau: number; wau: number; mau: number; returning: number };
+  users: { total: number; new_today: number; new_7d: number; new_30d: number; dau: number; wau: number; mau: number; returning: number; platforms?: Record<string, number>; new_7d_vk?: number };
   groups: { total: number; new_7d: number; with_friends: number; with_expenses: number; chat_linked: number; avg_size: number | null };
   expenses: { total: number; new_7d: number; sum_rub: number; by_source: Record<string, number>; currencies: { code: string; n: number }[]; transfers_confirmed: number; transfers_pending: number };
   features: { ai_scans: number; ai_scans_7d: number; chat_messages: number; reminders_sent: number; feedback: number };
@@ -71,6 +71,11 @@ export function StatsSheet({ onClose }: { onClose: () => void }) {
         <Tile label="Траты" value={e.total} sub={`+${e.new_7d} за неделю`} />
         <Tile label="Оборот" value={compact(e.sum_rub, "RUB")} sub="сумма всех трат" />
       </div>
+
+      {u.platforms && <div className="field"><span className="flabel">Откуда пользователи</span><div className="box">
+        <div className="pp"><span>Telegram</span><b className="num">{nf(u.platforms.telegram || 0)} · {pct(u.platforms.telegram || 0, u.total)}%</b></div>
+        <div className="pp"><span>ВКонтакте</span><b className="num">{nf(u.platforms.vk || 0)} · {pct(u.platforms.vk || 0, u.total)}%{u.new_7d_vk ? <small> · +{u.new_7d_vk} за неделю</small> : null}</b></div>
+      </div></div>}
 
       <Bars data={s.series} k="active" color="#5fb3ff" label="Активные пользователи по дням" avg />
       <Bars data={s.series} k="new_users" color="#7fc77f" label="Новые пользователи" />

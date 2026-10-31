@@ -10,5 +10,7 @@ export const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || "";
 /** Короткое имя мини-аппа из /newapp в BotFather, например app */
 export const APP_SHORT_NAME = import.meta.env.VITE_APP_SHORT_NAME || "app";
 
-export const inviteLink = (code: string) =>
-  BOT_USERNAME ? `https://t.me/${BOT_USERNAME}/${APP_SHORT_NAME}?startapp=${code}` : `?join=${code}`;
+/** ID мини-приложения ВКонтакте (публичный, виден в адресе vk.com/appID) */
+export const VK_APP_ID = import.meta.env.VITE_VK_APP_ID || "";
+/** ID сообщества ВК, от имени которого приходят напоминания и ответы поддержки (необязательно) */
+export const VK_GROUP_ID = Number(import.meta.env.VITE_VK_GROUP_ID || 0);

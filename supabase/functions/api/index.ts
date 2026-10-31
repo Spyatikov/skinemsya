@@ -6,7 +6,10 @@
 import { scanReceipt, aiEnabled } from "./ai.ts";
 import { handleUpdate, setupBot, webhookSecret } from "./bot.ts";
 import { runReminders } from "./reminders.ts";
-import { ADMIN_ID, BOT_TOKEN, BOT_USERNAME, db, esc, fail, HttpError, money as fmtMoney, postToLinkedChat, tgApi } from "./shared.ts";
+import {
+  ADMIN_ID, BOT_TOKEN, BOT_USERNAME, db, esc, fail, HttpError, isAdmin, isVkUser, money as fmtMoney, notifyUser, postToLinkedChat, tgApi,
+  VK_APP_ID, VK_APP_SECRET,
+} from "./shared.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -41,6 +44,42 @@ async function verifyInitData(initData: string): Promise<{ user: TgUser; startPa
   return { user: user!, startParam: params.get("start_param") ?? undefined };
 }
 
+// ---------- проверка запуска из ВКонтакте ----------
+const b64url = (b: Uint8Array) => btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+/** Как в официальном примере VKCOM/vk-apps-launch-params: пары из сырой строки, сортировка, encodeURIComponent.
+ *  Вторым вариантом пробуем значения после декодирования — на случай, если клиент ВК уже закодировал их. */
+export async function vkSignOk(query: string, secret: string, sign: string) {
+  const raw = query.replace(/^\?/, "").split("&").map((p) => { const i = p.indexOf("="); return i < 0 ? [p, ""] : [p.slice(0, i), p.slice(i + 1)]; })
+    .filter(([k]) => k.startsWith("vk_")).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  const dec = (v: string) => { try { return decodeURIComponent(v.replace(/\+/g, " ")); } catch { return v; } };
+  for (const conv of [(v: string) => v, dec]) {
+    const base = raw.map(([k, v]) => `${k}=${encodeURIComponent(conv(v))}`).join("&");
+    if (b64url(await hmac(enc.encode(secret), base)) === sign) return true;
+  }
+  return false;
+}
+// Подпись: все параметры vk_* по алфавиту, значения через encodeURIComponent, HMAC-SHA256 защищённым ключом, base64url.
+type Who = { user: TgUser; startParam?: string; platform: "telegram" | "vk" };
+async function verifyVK(query: string, profile: Record<string, unknown> | null): Promise<Who> {
+  if (!VK_APP_SECRET) fail(500, "На сервере не задан VK_APP_SECRET");
+  const params = new URLSearchParams(query);
+  const sign = params.get("sign");
+  if (!sign) fail(401, "Открой приложение во ВКонтакте");
+  if (!(await vkSignOk(query, VK_APP_SECRET, sign!))) fail(401, "Подпись ВКонтакте не сошлась");
+  if (VK_APP_ID && params.get("vk_app_id") !== VK_APP_ID) fail(401, "Чужое приложение ВКонтакте");
+  const ts = Number(params.get("vk_ts") ?? 0);
+  if (ts && Date.now() / 1000 - ts > 7 * 24 * 3600) fail(401, "Сессия устарела, перезапусти приложение");
+  const vkId = Number(params.get("vk_user_id"));
+  if (!vkId) fail(401, "Нет данных пользователя ВКонтакте");
+  // имя и фото приходят от клиента без подписи: подменить можно только своё же имя, чужой id — нельзя
+  const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+  const photo = str(profile?.photo, 500);
+  return {
+    platform: "vk",
+    user: { id: -vkId, first_name: str(profile?.first_name, 64), last_name: str(profile?.last_name, 64) || undefined, photo_url: /^https:\/\//.test(photo) ? photo : undefined },
+  };
+}
+
 // ---------- помощники ----------
 const inviteCode = () => {
   const abc = "abcdefghijkmnpqrstuvwxyz23456789";
@@ -56,7 +95,7 @@ async function botMessage(groupId: string, text: string, openFeed = false) {
 }
 // личное сообщение от бота; молча пропускаем, если человек ещё не запускал бота
 async function notify(userId: number, text: string) {
-  await tgApi("sendMessage", { chat_id: userId, text, parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "Открыть Скинемся", url: `https://t.me/${BOT_USERNAME}/app` }]] } });
+  await notifyUser(userId, text, { text: "Открыть Скинемся" });
 }
 const money = (n: number) => fmtMoney(Math.round(n), "RUB");
 
@@ -120,23 +159,31 @@ Deno.serve(async (req) => {
     return new Response("ok");
   }
   try {
-    const { initData, action, ...p } = await req.json();
-    const { user, startParam } = await verifyInitData(String(initData ?? ""));
+    const { initData, vk, profile, action, ...p } = await req.json();
+    const who: Who = vk ? await verifyVK(String(vk), profile ?? null) : { ...(await verifyInitData(String(initData ?? ""))), platform: "telegram" };
+    const { user, startParam } = who;
     const me = user.id;
-    await db.from("profiles").upsert({
-      id: me, first_name: user.first_name, last_name: user.last_name ?? null,
-      username: user.username ?? null, photo_url: user.photo_url ?? null, updated_at: new Date().toISOString(),
-    });
+    if (user.first_name) {
+      await db.from("profiles").upsert({
+        id: me, first_name: user.first_name, last_name: user.last_name ?? null, platform: who.platform,
+        username: user.username ?? null, photo_url: user.photo_url ?? null, updated_at: new Date().toISOString(),
+      });
+    } else {
+      // ВК не отдал профиль: не затираем сохранённое имя, новому пользователю даём временное
+      const { data: ex } = await db.from("profiles").select("id").eq("id", me).maybeSingle();
+      if (ex) await db.from("profiles").update({ updated_at: new Date().toISOString() }).eq("id", me);
+      else await db.from("profiles").insert({ id: me, first_name: "Друг из ВК", platform: who.platform });
+    }
 
     switch (action) {
       case "load": {
         let joined: string | null = null;
         if (p.join || startParam) joined = await joinByCode(String(p.join ?? startParam), me);
         if (!p.poll) await db.rpc("touch_activity", { uid: me }); // журнал активности для статистики
-        return json({ me, joined, ai: aiEnabled(), bot: BOT_USERNAME, admin: me === ADMIN_ID, ...(await loadAll(me)) });
+        return json({ me, joined, ai: aiEnabled(), bot: BOT_USERNAME, admin: isAdmin(me), ...(await loadAll(me)) });
       }
       case "adminStats": {
-        if (me !== ADMIN_ID) fail(403, "Статистика доступна только владельцу");
+        if (!isAdmin(me)) fail(403, "Статистика доступна только владельцу");
         const { data, error } = await db.rpc("admin_stats");
         if (error) fail(500, error.message);
         return json(data);
@@ -242,8 +289,9 @@ Deno.serve(async (req) => {
         if (text.length < 3) fail(400, "Опиши проблему хотя бы парой слов");
         const ctx = (p.context ?? {}) as Record<string, string>;
         const { data: fb } = await db.from("feedback").insert({ user_id: me, group_id: p.group_id ?? null, text, context: ctx }).select("id").single();
-        const who = `${esc(user.first_name)}${user.last_name ? " " + esc(user.last_name) : ""}${user.username ? ` (@${esc(user.username)})` : ""} · <code>${me}</code>`;
-        const head = `🆘 <b>Обращение #${fb?.id ?? ""}</b>\nОт: <a href="tg://user?id=${me}">${who}</a>\n` +
+        const whoName = `${esc(user.first_name)}${user.last_name ? " " + esc(user.last_name) : ""}${user.username ? ` (@${esc(user.username)})` : ""}`;
+        const whoLink = isVkUser(me) ? `<a href="https://vk.com/id${-me}">${whoName}</a> · ВКонтакте` : `<a href="tg://user?id=${me}">${whoName}</a> · <code>${me}</code>`;
+        const head = `🆘 <b>Обращение #${fb?.id ?? ""}</b>\nОт: ${whoLink}\n` +
           (ctx.group ? `Группа: ${esc(ctx.group)}\n` : "") + (ctx.platform ? `Устройство: ${esc(ctx.platform)}\n` : "") +
           `\n${esc(text)}\n\n<i>Ответь на это сообщение — ответ уйдёт автору.</i>`;
         let sent;
