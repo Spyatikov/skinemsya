@@ -42,7 +42,30 @@ jobs:
           STAMP=$(TZ=Europe/Moscow date +%Y-%m-%d_%H%M)
           echo "STAMP=$STAMP" >> "$GITHUB_ENV"
           mkdir -p out
-          pg_dump "$DB" --schema=public --no-owner --no-privileges --format=custom --compress=9 --file=dump.pgc
+          # Строку разбираем сами: пароль со спецсимволами (@ : / # ?) или оставленные вокруг него [скобки]
+          # ломают стандартный разбор. Части кладём в переменные PG*, которые понимают pg_dump и psql.
+          eval "$(python3 - <<'PY'
+          import os, re, shlex, sys
+          from urllib.parse import unquote
+          s = os.environ["DB"].strip().strip('"').strip("'")
+          m = re.match(r"^postgres(?:ql)?://(.+)@([^@/]+?)(?::(\d+))?(?:/([^?]*))?(?:\?.*)?$", s)
+          if not m:
+              print('echo "::error::SUPABASE_DB_URL не похожа на строку postgresql://… — скопируй её заново из Supabase → Connect → Session pooler"; exit 1'); sys.exit()
+          cred, host, port, db = m.groups()
+          user, _, pw = cred.partition(":")
+          if pw.startswith("[") and pw.endswith("]"): pw = pw[1:-1]
+          if pw.upper() == "YOUR-PASSWORD" or not pw:
+              print('echo "::error::В SUPABASE_DB_URL не подставлен пароль базы вместо [YOUR-PASSWORD]"; exit 1'); sys.exit()
+          if "%" in pw:
+              pw = unquote(pw)
+          print(f"echo ::add-mask::{shlex.quote(pw)}")
+          for k, v in {"PGUSER": unquote(user), "PGPASSWORD": pw, "PGHOST": host, "PGPORT": port or "5432", "PGDATABASE": unquote(db or "postgres") or "postgres", "PGSSLMODE": "require"}.items():
+              print(f"export {k}={shlex.quote(v)}")
+          print(f'echo "Подключаюсь: {user}@{host}:{port or 5432}"')
+          PY
+          )"
+          DB=""
+          pg_dump --schema=public --no-owner --no-privileges --format=custom --compress=9 --file=dump.pgc
           # быстрая проверка, что дамп читается
           pg_restore --list dump.pgc > /dev/null
           gpg --batch --yes --pinentry-mode loopback --passphrase "$PW" --symmetric --cipher-algo AES256 \
