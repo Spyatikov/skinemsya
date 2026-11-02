@@ -33,10 +33,25 @@ export default function App() {
     toastTimer.current = window.setTimeout(() => setToastText(""), 2400);
   }, []);
 
+  // метка последнего изменения: при опросе сервер отдаёт только изменённые группы
+  const cursor = useRef<string | undefined>();
   const reload = useCallback(async (join?: string, first = false) => {
     try {
-      const r = await call<LoadResult>("load", { ...(join ? { join } : {}), ...(first ? {} : { poll: 1 }) });
-      setData(r); setFatal("");
+      const since = !first && !join ? cursor.current : undefined;
+      const r = await call<LoadResult>("load", { ...(join ? { join } : {}), ...(first ? {} : { poll: 1 }), ...(since ? { since } : {}) });
+      if (r.cursor) cursor.current = r.cursor;
+      if (r.unchanged || r.partial) {
+        const keep = new Set(r.ids ?? []);
+        setData((prev) => {
+          if (!prev) return r;
+          const fresh = new Map(r.groups.map((x) => [x.id, x]));
+          const merged = prev.groups.filter((x) => keep.has(x.id)).map((x) => fresh.get(x.id) ?? x);
+          const added = r.groups.filter((x) => !prev.groups.some((y) => y.id === x.id));
+          if (r.unchanged && merged.length === prev.groups.length) return prev; // ничего не поменялось — без перерисовки
+          return { ...prev, ...r, groups: [...added, ...merged] };
+        });
+      } else setData(r);
+      setFatal("");
       if (r.joined) { setActiveId(r.joined); setTab("feed"); }
       return r;
     } catch (e) {

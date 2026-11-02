@@ -111,9 +111,9 @@ async function joinByCode(code: string, userId: number) {
   return g.id as string;
 }
 
-async function loadAll(userId: number) {
-  const { data: mine } = await db.from("members").select("group_id").eq("user_id", userId);
-  const ids = (mine ?? []).map((m) => m.group_id);
+/** Группы пользователя целиком. onlyIds — только эти (при опросе отдаём лишь изменённые) */
+async function loadAll(userId: number, onlyIds?: string[]) {
+  const ids: string[] = onlyIds ?? ((await db.from("members").select("group_id").eq("user_id", userId)).data ?? []).map((m) => m.group_id);
   if (!ids.length) return { groups: [] };
   const [groups, members, expenses, messages] = await Promise.all([
     db.from("groups").select("*").in("id", ids).order("created_at", { ascending: false }),
@@ -163,7 +163,9 @@ Deno.serve(async (req) => {
     const who: Who = vk ? await verifyVK(String(vk), profile ?? null) : { ...(await verifyInitData(String(initData ?? ""))), platform: "telegram" };
     const { user, startParam } = who;
     const me = user.id;
-    if (user.first_name) {
+    if (action === "load" && p.since) {
+      // опрос: профиль уже записан при открытии, лишний раз в базу не пишем
+    } else if (user.first_name) {
       await db.from("profiles").upsert({
         id: me, first_name: user.first_name, last_name: user.last_name ?? null, platform: who.platform,
         username: user.username ?? null, photo_url: user.photo_url ?? null, updated_at: new Date().toISOString(),
@@ -180,7 +182,20 @@ Deno.serve(async (req) => {
         let joined: string | null = null;
         if (p.join || startParam) joined = await joinByCode(String(p.join ?? startParam), me);
         if (!p.poll) await db.rpc("touch_activity", { uid: me }); // журнал активности для статистики
-        return json({ me, joined, ai: aiEnabled(), bot: BOT_USERNAME, admin: isAdmin(me), ...(await loadAll(me)) });
+        // какие группы есть у пользователя и когда каждая менялась — маленький запрос
+        const { data: mine } = await db.from("members").select("group_id,groups(updated_at)").eq("user_id", me);
+        const marks = (mine ?? []).map((m) => ({ id: m.group_id as string, at: Date.parse((m as { groups?: { updated_at?: string } }).groups?.updated_at ?? "") || 0 }));
+        const ids = marks.map((m) => m.id);
+        // метка для следующего опроса: «сейчас минус 3 с» — запас на записи, закоммиченные чуть позже своего времени
+        const cursor = new Date(Date.now() - 3000).toISOString();
+        const head = { me, joined, ai: aiEnabled(), bot: BOT_USERNAME, admin: isAdmin(me), ids, cursor };
+        const since = p.since ? Date.parse(String(p.since)) : NaN;
+        if (!joined && Number.isFinite(since)) {
+          const changed = marks.filter((m) => m.at > since).map((m) => m.id);
+          if (!changed.length) return json({ ...head, unchanged: true, groups: [] });
+          return json({ ...head, partial: true, ...(await loadAll(me, changed)) });
+        }
+        return json({ ...head, ...(await loadAll(me, ids)) });
       }
       case "adminStats": {
         if (!isAdmin(me)) fail(403, "Статистика доступна только владельцу");

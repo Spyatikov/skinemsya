@@ -2,7 +2,9 @@ import { API_URL, SUPABASE_ANON_KEY } from "./config";
 import { authPayload } from "./platform";
 import type { Group } from "./money";
 
-export type LoadResult = { me: number; joined: string | null; groups: Group[]; ai?: boolean; bot?: string; admin?: boolean };
+export type LoadResult = { me: number; joined: string | null; groups: Group[]; ai?: boolean; bot?: string; admin?: boolean;
+  /** опрос: ids — все группы пользователя, cursor — метка последнего изменения, partial/unchanged — пришли только изменения */
+  ids?: string[]; cursor?: string; partial?: boolean; unchanged?: boolean };
 
 export async function call<T = { ok: true }>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
   if (!API_URL) throw new Error("Сервер ещё не настроен: не задан адрес API.");
