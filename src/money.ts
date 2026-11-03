@@ -19,6 +19,7 @@ export type Group = {
   id: string; name: string; emoji: string; photo: string | null;
   start_date: string | null; end_date: string | null; currency: string; invite_code: string; created_by: number;
   tg_chat_id?: number | null; tg_chat_title?: string | null;
+  vk_peer_id?: number | null; vk_chat_title?: string | null;
   reminders?: boolean;
   mirror_to_chat?: boolean;
   members: Profile[]; expenses: Expense[]; messages: Message[];

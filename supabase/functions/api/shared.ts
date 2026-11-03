@@ -13,6 +13,28 @@ export const VK_APP_ID = Deno.env.get("VK_APP_ID") ?? "";
 export const VK_APP_SECRET = Deno.env.get("VK_APP_SECRET") ?? ""; // «Защищённый ключ» мини-приложения
 export const VK_GROUP_TOKEN = Deno.env.get("VK_GROUP_TOKEN") ?? ""; // ключ сообщества с правом сообщений (необязательно)
 export const ADMIN_VK_ID = Number(Deno.env.get("ADMIN_VK_ID") ?? "0");
+export const VK_GROUP_ID = Number(Deno.env.get("VK_GROUP_ID") ?? "242917623"); // сообщество «Скинемся»: бот бесед и уведомления
+/** секрет Callback API выводим из ключа сообщества — отдельный секрет заводить не нужно */
+export async function vkCallbackSecret() {
+  const h = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode("vkcb:" + VK_GROUP_TOKEN)));
+  return [...h].map((x) => x.toString(16).padStart(2, "0")).join("").slice(0, 40);
+}
+/** Сообщение в диалог или беседу ВК. code — кнопка, открывающая приложение сразу в нужной группе. */
+export async function vkSend(peerId: number, text: string, opts: { code?: string; replyTo?: number } = {}) {
+  const base: Record<string, string | number> = { peer_id: peerId, random_id: Math.floor(Math.random() * 2 ** 31), message: text, dont_parse_links: 1 };
+  if (opts.replyTo) base.forward = JSON.stringify({ peer_id: peerId, conversation_message_ids: [opts.replyTo], is_reply: true });
+  if (opts.code !== undefined && VK_APP_ID) {
+    const keyboard = JSON.stringify({ inline: true, buttons: [[{ action: { type: "open_app", app_id: Number(VK_APP_ID), hash: opts.code, label: "Открыть Скинемся" } }]] });
+    const r = await vkApi("messages.send", { ...base, keyboard });
+    if (!r.error) return r;
+    console.error("vk send with keyboard", r.error.error_msg);
+  }
+  // без кнопки (или кнопка не прошла) — ссылкой в тексте
+  const link = opts.code !== undefined ? vkAppLink(opts.code) : "";
+  const r = await vkApi("messages.send", { ...base, message: text + (link ? `\n\n${link}` : ""), dont_parse_links: 0 });
+  if (r.error) console.error("vk send", peerId, r.error.error_msg);
+  return r;
+}
 export const isAdmin = (id: number) => id === ADMIN_ID || (ADMIN_VK_ID > 0 && id === -ADMIN_VK_ID);
 export const isVkUser = (id: number) => id < 0;
 export const vkAppLink = (code?: string) => (VK_APP_ID ? `https://vk.com/app${VK_APP_ID}${code ? "#" + code : ""}` : "");
@@ -23,7 +45,7 @@ export async function vkApi<T = unknown>(method: string, params: Record<string, 
   try { return await (await fetch(`https://api.vk.com/method/${method}`, { method: "POST", body })).json(); }
   catch (e) { return { error: { error_code: -1, error_msg: String(e) } }; }
 }
-const htmlToText = (s: string) => s.replace(/<br\s*\/?>/g, "\n").replace(/<[^>]+>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+export const htmlToText =(s: string) => s.replace(/<br\s*\/?>/g, "\n").replace(/<[^>]+>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 
 /** Личное сообщение пользователю на его платформе. Telegram — от бота, ВК — от сообщества (если оно подключено и пользователь разрешил). */
 export async function notifyUser(id: number, html: string, button?: { text: string; code?: string }) {
@@ -201,11 +223,13 @@ export async function planText(groupId: string) {
     `\n\nВсего потрачено ${rub(total)}.`;
 }
 
-/** Сообщение в привязанный чат Telegram, если он есть */
+/** Сообщение в привязанные чаты: Telegram и/или беседу ВКонтакте */
 export async function postToLinkedChat(groupId: string, html: string, code?: string, onlyIfMirror = false) {
-  const { data: g } = await db.from("groups").select("tg_chat_id,invite_code,mirror_to_chat").eq("id", groupId).maybeSingle();
-  if (!g?.tg_chat_id) return;
+  const { data: g } = await db.from("groups").select("tg_chat_id,vk_peer_id,invite_code,mirror_to_chat").eq("id", groupId).maybeSingle();
+  if (!g?.tg_chat_id && !g?.vk_peer_id) return;
   if (onlyIfMirror && !g.mirror_to_chat) return;
+  if (g.vk_peer_id) await vkSend(Number(g.vk_peer_id), htmlToText(html), { code: code ?? g.invite_code });
+  if (!g.tg_chat_id) return;
   await tgApi("sendMessage", {
     chat_id: g.tg_chat_id, text: html, parse_mode: "HTML", disable_web_page_preview: true,
     reply_markup: { inline_keyboard: [[{ text: "Открыть Скинемся", url: groupLink(code ?? g.invite_code) }]] },

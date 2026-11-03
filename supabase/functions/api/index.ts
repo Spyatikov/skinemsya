@@ -6,9 +6,10 @@
 import { scanReceipt, aiEnabled } from "./ai.ts";
 import { handleUpdate, setupBot, webhookSecret } from "./bot.ts";
 import { runReminders } from "./reminders.ts";
+import { handleVkCallback, setupVkCallback } from "./vkbot.ts";
 import {
   ADMIN_ID, BOT_TOKEN, BOT_USERNAME, db, esc, fail, HttpError, isAdmin, isVkUser, money as fmtMoney, notifyUser, postToLinkedChat, tgApi,
-  ADMIN_VK_ID, VK_APP_ID, VK_APP_SECRET, vkApi,
+  ADMIN_VK_ID, VK_APP_ID, VK_APP_SECRET, VK_GROUP_ID, vkApi, vkSend,
 } from "./shared.ts";
 
 const CORS = {
@@ -159,6 +160,12 @@ Deno.serve(async (req) => {
     const r = await vkApi("messages.send", { user_id: ADMIN_VK_ID, random_id: Math.floor(Math.random() * 2 ** 31), message: "✅ Уведомления «Скинемся» во ВКонтакте работают. Сюда будут приходить переводы, подтверждения и напоминания о долгах." });
     return json(r);
   }
+  // подключение бота ВК (Callback API) к сообществу
+  if (url.searchParams.get("cron") === "vksetup") {
+    const { data: cfg } = await db.from("app_config").select("value").eq("key", "cron_key").maybeSingle();
+    if (!cfg?.value || url.searchParams.get("key") !== cfg.value) return new Response("forbidden", { status: 403 });
+    return json(await setupVkCallback(`${Deno.env.get("SUPABASE_URL")}/functions/v1/api`));
+  }
   // вебхук Telegram
   const tgSecret = req.headers.get("x-telegram-bot-api-secret-token");
   if (tgSecret !== null) {
@@ -167,7 +174,12 @@ Deno.serve(async (req) => {
     return new Response("ok");
   }
   try {
-    const { initData, vk, profile, action, ...p } = await req.json();
+    const body = await req.json();
+    // событие Callback API от сообщества ВКонтакте
+    if (typeof body?.type === "string" && Number(body?.group_id) === VK_GROUP_ID && !body.action) {
+      return new Response(await handleVkCallback(body), { headers: { "content-type": "text/plain" } });
+    }
+    const { initData, vk, profile, action, ...p } = body;
     const who: Who = vk ? await verifyVK(String(vk), profile ?? null) : { ...(await verifyInitData(String(initData ?? ""))), platform: "telegram" };
     const { user, startParam } = who;
     const me = user.id;
@@ -300,6 +312,14 @@ Deno.serve(async (req) => {
       }
       case "unlinkChat": {
         await mustBeMember(p.id, me);
+        if (p.kind === "vk") {
+          const { data: g } = await db.from("groups").select("vk_peer_id,name").eq("id", p.id).single();
+          if (g?.vk_peer_id) {
+            await vkSend(Number(g.vk_peer_id), `Беседа отключена от группы «${g.name}». Траты отсюда больше не записываются.`);
+            await db.from("groups").update({ vk_peer_id: null, vk_chat_title: null }).eq("id", p.id);
+          }
+          return json({ ok: true });
+        }
         const { data: g } = await db.from("groups").select("tg_chat_id,name").eq("id", p.id).single();
         if (g?.tg_chat_id) {
           await tgApi("sendMessage", { chat_id: g.tg_chat_id, text: `Чат отключён от группы «${g.name}». Траты отсюда больше не записываются.` });

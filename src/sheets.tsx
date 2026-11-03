@@ -1,6 +1,6 @@
 // Шторки: новый/изменение расхода, скан чека, детали траты, настройки группы, приглашение.
 import { useMemo, useRef, useState } from "react";
-import { BOT_USERNAME } from "./config";
+import { BOT_USERNAME, VK_GROUP_ID } from "./config";
 import { type Expense, type Group, type ReceiptItem, type Split, nf, onN, parseAmount, plural, rubOf, shares } from "./money";
 import { CATALOG, CUR, DEFAULT_CURS, inBase, money, rateLabel, rateOf, sym } from "./rates";
 import { parseReceipt, recognize, recognizeAI } from "./receipt";
@@ -377,7 +377,7 @@ export function GroupSheet({ c, create }: { c: Ctx | (Omit<Ctx, "g"> & { g?: Gro
     if (!nameV.trim()) return setErr("Впиши название группы.");
     if (start && end && end < start) return setErr("Дата конца раньше даты начала. Поправь даты.");
     setBusy(true);
-    const fields = { name: nameV.trim(), emoji, photo, start_date: start || null, end_date: end || null, currency: cur, reminders, ...(g?.tg_chat_id ? { mirror_to_chat: mirror } : {}) };
+    const fields = { name: nameV.trim(), emoji, photo, start_date: start || null, end_date: end || null, currency: cur, reminders, ...(g?.tg_chat_id || g?.vk_peer_id ? { mirror_to_chat: mirror } : {}) };
     if (create) {
       // после создания run() сам открывает шторку с приглашением — не закрываем её
       await c.run("createGroup", fields, "Группа создана");
@@ -431,7 +431,7 @@ export function GroupSheet({ c, create }: { c: Ctx | (Omit<Ctx, "g"> & { g?: Gro
             <span className="ico"><svg viewBox="0 0 24 24"><path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-5 4z" /></svg></span>
             <span>Подключён «{g.tg_chat_title || "чат"}»<br /><small style={{ color: "var(--muted)" }}>Сообщения вида «+1200 такси» из чата записываются в расходы</small></span>
           </div>
-            <div className="pp"><button style={{ color: "var(--minus)", fontWeight: 600 }} onClick={() => c.run("unlinkChat", { id: g.id }, "Чат отключён")}>Отключить чат</button></div>
+            <div className="pp"><button style={{ color: "var(--minus)", fontWeight: 600 }} onClick={() => c.run("unlinkChat", { id: g.id, kind: "tg" }, "Чат отключён")}>Отключить чат</button></div>
           </div>
         ) : null}
         {g.tg_chat_id ? (
@@ -445,6 +445,27 @@ export function GroupSheet({ c, create }: { c: Ctx | (Omit<Ctx, "g"> & { g?: Gro
             openLink(`https://t.me/${BOT_USERNAME}?startgroup=${g.invite_code}`);
           }}>Подключить чат Telegram</button>
           <span style={{ color: "var(--muted)", fontSize: 13 }}>Выбери чат поездки, бот присоединится к нему. Траты можно будет писать прямо в чате: «+1200 такси», «/itog» покажет расчёт.</span>
+        </>}
+      </div>}
+      {g && VK_GROUP_ID > 0 && (platform === "vk" || g.vk_peer_id) && <div className="field"><span className="flabel">Беседа ВКонтакте</span>
+        {g.vk_peer_id ? <>
+          <div className="box"><div className="pp">
+            <span className="ico"><svg viewBox="0 0 24 24"><path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-5 4z" /></svg></span>
+            <span>Подключена «{g.vk_chat_title || "беседа"}»<br /><small style={{ color: "var(--muted)" }}>Сообщения вида «+1200 такси» из беседы записываются в расходы</small></span>
+          </div>
+            <div className="pp"><button style={{ color: "var(--minus)", fontWeight: 600 }} onClick={() => c.run("unlinkChat", { id: g.id, kind: "vk" }, "Беседа отключена")}>Отключить беседу</button></div>
+          </div>
+          {!g.tg_chat_id && <label className="toggle" htmlFor="f-mirror-vk">
+            <span><b>Дублировать в беседу</b><small>Траты и сообщения, добавленные в приложении, сообщество будет пересылать в «{g.vk_chat_title || "беседу"}».</small></span>
+            <input type="checkbox" id="f-mirror-vk" checked={mirror} onChange={(e) => setMirror(e.target.checked)} />
+            <i aria-hidden="true" />
+          </label>}
+        </> : <>
+          <span style={{ color: "var(--muted)", fontSize: 13 }}>1. Добавь сообщество «Скинемся» в беседу поездки: страница сообщества → «Ещё» → «Пригласить в беседу».</span>
+          <button className="btn ghost wide" onClick={() => openLink(`https://vk.com/club${VK_GROUP_ID}`)}>Открыть сообщество «Скинемся»</button>
+          <span style={{ color: "var(--muted)", fontSize: 13 }}>2. Отправь в беседу команду — она свяжет беседу с этой группой:</span>
+          <button className="btn ghost wide" onClick={async () => c.toast((await copyText(`/привязать ${g.invite_code}`)) ? "Команда скопирована, вставь её в беседу" : `/привязать ${g.invite_code}`)}>Скопировать «/привязать {g.invite_code}»</button>
+          <span style={{ color: "var(--muted)", fontSize: 13 }}>3. Чтобы бот видел «+1200 такси» без упоминания, в настройках беседы дай сообществу доступ ко всей переписке. «итог» покажет расчёт.</span>
         </>}
       </div>}
       {create && <span style={{ color: "var(--muted)", fontSize: 13 }}>После создания получишь ссылку, чтобы позвать друзей.</span>}
