@@ -8,7 +8,7 @@ import { handleUpdate, setupBot, webhookSecret } from "./bot.ts";
 import { runReminders } from "./reminders.ts";
 import {
   ADMIN_ID, BOT_TOKEN, BOT_USERNAME, db, esc, fail, HttpError, isAdmin, isVkUser, money as fmtMoney, notifyUser, postToLinkedChat, tgApi,
-  VK_APP_ID, VK_APP_SECRET,
+  ADMIN_VK_ID, VK_APP_ID, VK_APP_SECRET, vkApi,
 } from "./shared.ts";
 
 const CORS = {
@@ -150,6 +150,14 @@ Deno.serve(async (req) => {
     const { data: cfg } = await db.from("app_config").select("value").eq("key", "cron_key").maybeSingle();
     if (!cfg?.value || url.searchParams.get("key") !== cfg.value) return new Response("forbidden", { status: 403 });
     try { return json(await runReminders()); } catch (e) { console.error("reminders failed", e); return json({ error: String(e) }, 500); }
+  }
+  // проверка уведомлений ВКонтакте: тестовое сообщение владельцу от сообщества (тот же ключ, что у напоминаний)
+  if (url.searchParams.get("cron") === "vktest") {
+    const { data: cfg } = await db.from("app_config").select("value").eq("key", "cron_key").maybeSingle();
+    if (!cfg?.value || url.searchParams.get("key") !== cfg.value) return new Response("forbidden", { status: 403 });
+    if (!ADMIN_VK_ID) return json({ error: "ADMIN_VK_ID не задан" }, 400);
+    const r = await vkApi("messages.send", { user_id: ADMIN_VK_ID, random_id: Math.floor(Math.random() * 2 ** 31), message: "✅ Уведомления «Скинемся» во ВКонтакте работают. Сюда будут приходить переводы, подтверждения и напоминания о долгах." });
+    return json(r);
   }
   // вебхук Telegram
   const tgSecret = req.headers.get("x-telegram-bot-api-secret-token");
