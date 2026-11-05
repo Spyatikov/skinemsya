@@ -23,14 +23,13 @@ export async function initPlatform() {
   if (platform === "telegram") { initTelegram(); return; }
   if (platform !== "vk") return;
   if (vkMobile) root.classList.add("pf-vk-mobile");
-  try { await bridge.send("VKWebAppInit"); } catch { /* старый клиент */ }
+  // ВК на некоторых клиентах (мобильный браузер, старые версии) не отвечает на Init — не ждём дольше 1,5 с
+  const soon = <T,>(p: Promise<T>, ms: number) => Promise.race([p, new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), ms))]);
+  try { await soon(bridge.send("VKWebAppInit"), 1500); } catch { /* старый клиент или браузер */ }
   const bg = getComputedStyle(root).getPropertyValue("--bg").trim() || "#17212b";
   bridge.send("VKWebAppSetViewSettings", { status_bar_style: "light", action_bar_color: bg, navigation_bar_color: bg }).catch(() => {});
   try {
-    const u = await Promise.race([
-      bridge.send("VKWebAppGetUserInfo"),
-      new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), 2500)),
-    ]);
+    const u = await soon(bridge.send("VKWebAppGetUserInfo"), 2500);
     vkUser = { first_name: u.first_name, last_name: u.last_name, photo: u.photo_200 || u.photo_100 };
   } catch { /* профиль подтянется со следующего открытия */ }
 }
