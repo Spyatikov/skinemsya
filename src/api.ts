@@ -4,7 +4,9 @@ import type { Group } from "./money";
 
 export type LoadResult = { me: number; joined: string | null; groups: Group[]; ai?: boolean; bot?: string; admin?: boolean;
   /** опрос: ids — все группы пользователя, cursor — метка последнего изменения, partial/unchanged — пришли только изменения */
-  ids?: string[]; cursor?: string; partial?: boolean; unchanged?: boolean };
+  ids?: string[]; cursor?: string; partial?: boolean; unchanged?: boolean;
+  /** принял ли пользователь политику конфиденциальности (приходит при открытии, не при опросе) */
+  consent?: boolean };
 
 export async function call<T = { ok: true }>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
   if (!API_URL) throw new Error("Сервер ещё не настроен: не задан адрес API.");

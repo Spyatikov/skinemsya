@@ -553,7 +553,9 @@ export function HelpSheet({ c }: { c: Omit<Ctx, "g"> & { g?: Group } }) {
       <SheetHead title="Помощь" onClose={c.close} />
       <div className="box">
         <div className="pp"><span><b>Как позвать друзей?</b><br /><small style={{ color: "var(--muted)" }}>Кнопка «Позвать» на экране расходов. Ссылку можно отправить в любой чат.</small></span></div>
-        <div className="pp"><span><b>Как записывать траты из чата Telegram?</b><br /><small style={{ color: "var(--muted)" }}>Карандаш в шапке группы → «Подключить чат Telegram». Потом пишите в чат «+1200 такси».</small></span></div>
+        {platform === "vk"
+          ? <div className="pp"><span><b>Как записывать траты из беседы ВКонтакте?</b><br /><small style={{ color: "var(--muted)" }}>Карандаш в шапке группы → «Беседа ВКонтакте». Добавь сообщество в беседу, отправь туда команду привязки и пишите «+1200 такси».</small></span></div>
+          : <div className="pp"><span><b>Как записывать траты из чата Telegram?</b><br /><small style={{ color: "var(--muted)" }}>Карандаш в шапке группы → «Подключить чат Telegram». Потом пишите в чат «+1200 такси».</small></span></div>}
         <div className="pp"><span><b>Почему долг не закрылся?</b><br /><small style={{ color: "var(--muted)" }}>Перевод засчитывается, когда получатель нажмёт «Получил».</small></span></div>
       </div>
       <div className="field"><label className="flabel" htmlFor="f-help">Написать разработчику</label>
@@ -567,7 +569,36 @@ export function HelpSheet({ c }: { c: Omit<Ctx, "g"> & { g?: Group } }) {
         <input type="file" id="f-shot" accept="image/*" hidden onChange={(e) => attach(e.target.files?.[0])} />
       </div>
       <button className="btn wide" disabled={busy || text.trim().length < 3} onClick={send}>{busy ? "Отправляю…" : "Отправить"}</button>
-      <p className="note">Вместе с сообщением уйдут твоё имя в Telegram и модель устройства, чтобы было проще разобраться.</p>
+      <p className="note">Вместе с сообщением уйдут твоё имя и модель устройства, чтобы было проще разобраться.</p>
+      <ForgetMe c={c} />
     </>
+  );
+}
+
+/** «Удалить мои данные»: двухшаговое подтверждение прямо в шторке, без системных диалогов */
+function ForgetMe({ c }: { c: Omit<Ctx, "g"> & { g?: Group } }) {
+  const [step, setStep] = useState<"idle" | "ask" | "busy" | "done">("idle");
+  const doc = new URL(`${import.meta.env.BASE_URL}privacy.html`, location.href).href;
+  if (step === "done") return <p className="note">Данные удалены. Если откроешь приложение снова, оно спросит согласие заново.</p>;
+  return (
+    <div className="field" style={{ marginTop: 8 }}>
+      <span className="flabel">Мои данные</span>
+      {step === "idle" ? <div className="box">
+        <div className="pp"><button className="linkbtn" onClick={() => openLink(doc)}>Политика конфиденциальности</button></div>
+        <div className="pp"><button style={{ color: "var(--minus)", fontWeight: 600 }} onClick={() => setStep("ask")}>Удалить мои данные</button></div>
+      </div> : <div className="box"><div className="pp"><span>
+        <b>Точно удалить?</b><br />
+        <small style={{ color: "var(--muted)" }}>Сотрём твоё имя, фото, сообщения и обращения. Группы, где ты один, удалятся целиком. В общих группах твои траты останутся под именем «Удалённый участник», иначе у друзей сломается расчёт. Отменить нельзя.</small>
+      </span></div>
+        <div className="pp" style={{ gap: 16 }}>
+          <button style={{ color: "var(--minus)", fontWeight: 600 }} disabled={step === "busy"} onClick={async () => {
+            setStep("busy");
+            const ok = await c.run("deleteMe", {}, "Данные удалены");
+            setStep(ok ? "done" : "ask");
+          }}>{step === "busy" ? "Удаляю…" : "Да, удалить"}</button>
+          <button className="linkbtn" onClick={() => setStep("idle")}>Отмена</button>
+        </div>
+      </div>}
+    </div>
   );
 }

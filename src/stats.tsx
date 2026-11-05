@@ -8,13 +8,13 @@ import { SheetHead } from "./ui";
 type Day = { day: string; active: number; new_users: number; expenses: number; groups: number };
 type Stats = {
   today: string;
-  users: { total: number; new_today: number; new_7d: number; new_30d: number; dau: number; wau: number; mau: number; returning: number; platforms?: Record<string, number>; new_7d_vk?: number };
-  groups: { total: number; new_7d: number; with_friends: number; with_expenses: number; chat_linked: number; avg_size: number | null };
+  users: { total: number; new_today: number; new_7d: number; new_30d: number; dau: number; wau: number; mau: number; returning: number; platforms?: Record<string, number>; new_7d_vk?: number; consented?: number; deleted?: number };
+  groups: { total: number; new_7d: number; with_friends: number; with_expenses: number; chat_linked: number; chat_linked_vk?: number; avg_size: number | null };
   expenses: { total: number; new_7d: number; sum_rub: number; by_source: Record<string, number>; currencies: { code: string; n: number }[]; transfers_confirmed: number; transfers_pending: number };
   features: { ai_scans: number; ai_scans_7d: number; chat_messages: number; reminders_sent: number; feedback: number };
   funnel: { opened: number; in_group: number; with_friends: number; added_expense: number; settled: number };
   series: Day[];
-  top_groups: { name: string; emoji: string; members: number; expenses: number; sum_rub: number; last_at: string | null }[];
+  group_sizes: Record<string, number>; group_activity: Record<string, number>;
   feedback: { text: string; created_at: string; first_name: string | null; username: string | null }[];
 };
 
@@ -75,6 +75,7 @@ export function StatsSheet({ onClose }: { onClose: () => void }) {
       {u.platforms && <div className="field"><span className="flabel">Откуда пользователи</span><div className="box">
         <div className="pp"><span>Telegram</span><b className="num">{nf(u.platforms.telegram || 0)} · {pct(u.platforms.telegram || 0, u.total)}%</b></div>
         <div className="pp"><span>ВКонтакте</span><b className="num">{nf(u.platforms.vk || 0)} · {pct(u.platforms.vk || 0, u.total)}%{u.new_7d_vk ? <small> · +{u.new_7d_vk} за неделю</small> : null}</b></div>
+        {u.consented !== undefined && <div className="pp"><span>Приняли политику / удалили данные</span><b className="num">{nf(u.consented)} / {nf(u.deleted ?? 0)}</b></div>}
       </div></div>}
 
       <Bars data={s.series} k="active" color="#5fb3ff" label="Активные пользователи по дням" avg />
@@ -95,7 +96,7 @@ export function StatsSheet({ onClose }: { onClose: () => void }) {
         <div className="pp"><span>Траты по чеку</span><b className="num">{nf(src.scan || 0)} · {pct(src.scan || 0, srcTotal)}%</b></div>
         <div className="pp"><span>ИИ-сканов всего / за неделю</span><b className="num">{nf(f.ai_scans)} / {nf(f.ai_scans_7d)}</b></div>
         <div className="pp"><span>Группы с друзьями / с тратами</span><b className="num">{nf(g.with_friends)} / {nf(g.with_expenses)}</b></div>
-        <div className="pp"><span>Подключили чат Telegram</span><b className="num">{nf(g.chat_linked)}</b></div>
+        <div className="pp"><span>Подключили чат Telegram / беседу ВК</span><b className="num">{nf(g.chat_linked)} / {nf(g.chat_linked_vk ?? 0)}</b></div>
         <div className="pp"><span>Средний размер группы</span><b className="num">{g.avg_size ?? "—"}</b></div>
         <div className="pp"><span>Переводы подтверждены / ждут</span><b className="num">{nf(e.transfers_confirmed)} / {nf(e.transfers_pending)}</b></div>
         <div className="pp"><span>Сообщений в чатах групп</span><b className="num">{nf(f.chat_messages)}</b></div>
@@ -106,11 +107,9 @@ export function StatsSheet({ onClose }: { onClose: () => void }) {
         <div className="chips">{e.currencies.map((c) => <span key={c.code} className="chip" aria-pressed="false">{c.code} · {c.n}</span>)}</div>
       </div>}
 
-      {s.top_groups.length > 0 && <div className="field"><span className="flabel">Самые активные группы</span><div className="box">
-        {s.top_groups.map((t, i) => <div className="pp" key={i}><span style={{ fontSize: 20, flex: "none" }}>{t.emoji}</span>
-          <span>{t.name}<br /><small style={{ color: "var(--muted)" }}>{t.members} чел. · {t.expenses} трат{t.last_at ? ` · последняя ${short(t.last_at)}` : ""}</small></span>
-          <b className="num">{nf(t.sum_rub)} ₽</b></div>)}
-      </div></div>}
+      <Dist title="Сколько человек в группах" data={s.group_sizes} order={["1", "2", "3–4", "5–7", "8+"]} unit="чел." />
+      <Dist title="Сколько трат в группах" data={s.group_activity} order={["0", "1–5", "6–20", "21+"]} unit="трат" />
+      <p className="note" style={{ textAlign: "left", marginTop: -4 }}>Статистика обезличена: здесь нет названий групп, имён и сумм отдельных поездок.</p>
 
       <div className="field"><span className="flabel">Обращения в помощь · {f.feedback}</span>
         {s.feedback.length ? <div className="box">{s.feedback.map((x, i) => (
@@ -119,5 +118,20 @@ export function StatsSheet({ onClose }: { onClose: () => void }) {
       </div>
       <p className="note">Сводку можно получить и в боте командой /stats.</p>
     </>
+  );
+}
+
+function Dist({ title, data, order, unit }: { title: string; data: Record<string, number>; order: string[]; unit: string }) {
+  const rows = order.map((k) => [k, data?.[k] ?? 0] as const);
+  const max = Math.max(1, ...rows.map(([, v]) => v));
+  if (!rows.some(([, v]) => v)) return null;
+  return (
+    <div className="field"><span className="flabel">{title}</span><div className="box">
+      {rows.map(([k, v]) => <div className="pp" key={k}>
+        <span style={{ width: 70, flex: "none" }}>{k} {unit}</span>
+        <span style={{ flex: 1, height: 8, borderRadius: 4, background: "var(--line, rgba(127,127,127,.2))", overflow: "hidden" }}>
+          <span style={{ display: "block", height: "100%", width: `${(v / max) * 100}%`, background: "var(--accent, #4f7cff)" }} /></span>
+        <b className="num" style={{ width: 36, textAlign: "right", flex: "none" }}>{v}</b></div>)}
+    </div></div>
   );
 }

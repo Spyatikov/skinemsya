@@ -5,7 +5,7 @@ import { type Expense, type Group, myStats, nets, onN, pairCount, parseAmount, p
 import { CATALOG, compact, inBase, inBaseShort, loadRates, money, rateOf, ratesDate, sym } from "./rates";
 import { StatsSheet } from "./stats";
 import { AddSheet, type Ctx, DetailSheet, GroupSheet, HelpSheet, InviteSheet, ScanSheet, type Sheet, defaultCurs } from "./sheets";
-import { firstName, haptic, inApp, initPlatform, startCode } from "./platform";
+import { firstName, haptic, inApp, initPlatform, openLink, startCode } from "./platform";
 import { BOT_USERNAME, VK_APP_ID } from "./config";
 import { Avatar, Fly, GroupImg, Ico, catName, dayName, guessCat, relDay, richText, todayISO, tripDates } from "./ui";
 
@@ -117,6 +117,10 @@ export default function App() {
   if (!data) return fatal
     ? <Center title="Не получилось загрузить" text={fatal} action={<button className="btn" onClick={() => { setFatal(""); reload(undefined, true); }}>Попробовать снова</button>} />
     : <main><div className="wrap"><div className="center"><div className="spinner" /><p>Загружаю группы…</p></div></div></main>;
+
+  if (data.consent === false) return <Consent onAccept={async () => {
+    try { await call("consent"); setData((d) => (d ? { ...d, consent: true } : d)); } catch (e) { toast(e instanceof Error ? e.message : String(e)); }
+  }} />;
 
   const groupSheetCtx = ctx ?? { me, base, curs, ai, addCur, run, close, open: setSheet, toast };
 
@@ -427,3 +431,26 @@ function Chat({ c, onTab }: { c: Ctx; onTab: (t: Tab) => void }) {
   );
 }
 
+
+// ---------- согласие с политикой при первом входе ----------
+function Consent({ onAccept }: { onAccept: () => Promise<void> }) {
+  const [ok, setOk] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const doc = (f: string) => new URL(`${import.meta.env.BASE_URL}${f}`, location.href).href;
+  return (
+    <main><div className="wrap"><div className="center">
+      <img className="logo" src={`${import.meta.env.BASE_URL}logo.png`} alt="Скинемся" />
+      <h2>Скинемся</h2>
+      <p>Общие траты в поездках с друзьями. Твоё имя и фото увидят только участники твоих групп.</p>
+      <label className="toggle" htmlFor="f-consent" style={{ textAlign: "left", width: "100%" }}>
+        <span><b>Принимаю условия</b><small>
+          <button className="linkbtn" onClick={(e) => { e.preventDefault(); openLink(doc("privacy.html")); }}>Политика конфиденциальности</button>{" "}и{" "}
+          <button className="linkbtn" onClick={(e) => { e.preventDefault(); openLink(doc("terms.html")); }}>пользовательское соглашение</button>
+        </small></span>
+        <input type="checkbox" id="f-consent" checked={ok} onChange={(e) => setOk(e.target.checked)} />
+        <i aria-hidden="true" />
+      </label>
+      <button className="btn wide" disabled={!ok || busy} onClick={async () => { setBusy(true); await onAccept(); setBusy(false); }}>{busy ? "Секунду…" : "Продолжить"}</button>
+    </div></div></main>
+  );
+}

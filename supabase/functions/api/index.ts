@@ -188,7 +188,7 @@ Deno.serve(async (req) => {
     } else if (user.first_name) {
       await db.from("profiles").upsert({
         id: me, first_name: user.first_name, last_name: user.last_name ?? null, platform: who.platform,
-        username: user.username ?? null, photo_url: user.photo_url ?? null, updated_at: new Date().toISOString(),
+        username: user.username ?? null, photo_url: user.photo_url ?? null, updated_at: new Date().toISOString(), deleted_at: null,
       });
     } else {
       // ВК не отдал профиль: не затираем сохранённое имя, новому пользователю даём временное
@@ -208,7 +208,9 @@ Deno.serve(async (req) => {
         const ids = marks.map((m) => m.id);
         // метка для следующего опроса: «сейчас минус 3 с» — запас на записи, закоммиченные чуть позже своего времени
         const cursor = new Date(Date.now() - 3000).toISOString();
-        const head = { me, joined, ai: aiEnabled(), bot: BOT_USERNAME, admin: isAdmin(me), ids, cursor };
+        const head: Record<string, unknown> = { me, joined, ai: aiEnabled(), bot: BOT_USERNAME, admin: isAdmin(me), ids, cursor };
+        // согласие с политикой спрашиваем при открытии; при опросе не проверяем — лишний запрос
+        if (!p.since) head.consent = Boolean((await db.from("profiles").select("consent_at").eq("id", me).maybeSingle()).data?.consent_at);
         const since = p.since ? Date.parse(String(p.since)) : NaN;
         if (!joined && Number.isFinite(since)) {
           const changed = marks.filter((m) => m.at > since).map((m) => m.id);
@@ -216,6 +218,16 @@ Deno.serve(async (req) => {
           return json({ ...head, partial: true, ...(await loadAll(me, changed)) });
         }
         return json({ ...head, ...(await loadAll(me, ids)) });
+      }
+      case "consent": {
+        await db.from("profiles").update({ consent_at: new Date().toISOString() }).eq("id", me);
+        return json({ ok: true });
+      }
+      case "deleteMe": {
+        // обезличиваем профиль и стираем личные записи; в общих группах траты остаются под «Удалённый участник»
+        const { data, error } = await db.rpc("forget_user", { uid: me });
+        if (error) fail(500, error.message);
+        return json({ ok: true, ...(data as Record<string, unknown>) });
       }
       case "adminStats": {
         if (!isAdmin(me)) fail(403, "Статистика доступна только владельцу");
