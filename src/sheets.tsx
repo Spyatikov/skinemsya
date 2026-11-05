@@ -1,6 +1,6 @@
 // Шторки: новый/изменение расхода, скан чека, детали траты, настройки группы, приглашение.
 import { useMemo, useRef, useState } from "react";
-import { BOT_USERNAME, VK_GROUP_ID } from "./config";
+import { BOT_USERNAME, MAX_BOT, VK_GROUP_ID } from "./config";
 import { type Expense, type Group, type ReceiptItem, type Split, nf, onN, parseAmount, plural, rubOf, shares } from "./money";
 import { CATALOG, CUR, DEFAULT_CURS, inBase, money, rateLabel, rateOf, sym } from "./rates";
 import { parseReceipt, recognize, recognizeAI } from "./receipt";
@@ -377,7 +377,7 @@ export function GroupSheet({ c, create }: { c: Ctx | (Omit<Ctx, "g"> & { g?: Gro
     if (!nameV.trim()) return setErr("Впиши название группы.");
     if (start && end && end < start) return setErr("Дата конца раньше даты начала. Поправь даты.");
     setBusy(true);
-    const fields = { name: nameV.trim(), emoji, photo, start_date: start || null, end_date: end || null, currency: cur, reminders, ...(g?.tg_chat_id || g?.vk_peer_id ? { mirror_to_chat: mirror } : {}) };
+    const fields = { name: nameV.trim(), emoji, photo, start_date: start || null, end_date: end || null, currency: cur, reminders, ...(g?.tg_chat_id || g?.vk_peer_id || g?.max_chat_id ? { mirror_to_chat: mirror } : {}) };
     if (create) {
       // после создания run() сам открывает шторку с приглашением — не закрываем её
       await c.run("createGroup", fields, "Группа создана");
@@ -468,6 +468,26 @@ export function GroupSheet({ c, create }: { c: Ctx | (Omit<Ctx, "g"> & { g?: Gro
           <span style={{ color: "var(--muted)", fontSize: 13 }}>3. Чтобы бот видел «+1200 такси» без упоминания, в настройках беседы дай сообществу доступ ко всей переписке. «итог» покажет расчёт.</span>
         </>}
       </div>}
+      {g && MAX_BOT && (platform === "max" || g.max_chat_id) && <div className="field"><span className="flabel">Чат MAX</span>
+        {g.max_chat_id ? <>
+          <div className="box"><div className="pp">
+            <span className="ico"><svg viewBox="0 0 24 24"><path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-5 4z" /></svg></span>
+            <span>Подключён «{g.max_chat_title || "чат"}»<br /><small style={{ color: "var(--muted)" }}>Сообщения вида «+1200 такси» из чата записываются в расходы</small></span>
+          </div>
+            <div className="pp"><button style={{ color: "var(--minus)", fontWeight: 600 }} onClick={() => c.run("unlinkChat", { id: g.id, kind: "max" }, "Чат отключён")}>Отключить чат</button></div>
+          </div>
+          {!g.tg_chat_id && !g.vk_peer_id && <label className="toggle" htmlFor="f-mirror-max">
+            <span><b>Дублировать в чат</b><small>Траты и сообщения, добавленные в приложении, бот будет пересылать в «{g.max_chat_title || "чат"}».</small></span>
+            <input type="checkbox" id="f-mirror-max" checked={mirror} onChange={(e) => setMirror(e.target.checked)} />
+            <i aria-hidden="true" />
+          </label>}
+        </> : <>
+          <span style={{ color: "var(--muted)", fontSize: 13 }}>1. Добавь бота @{MAX_BOT} в чат поездки и сделай его администратором — так он увидит «+1200 такси».</span>
+          <span style={{ color: "var(--muted)", fontSize: 13 }}>2. Отправь в чат команду — она свяжет чат с этой группой:</span>
+          <button className="btn ghost wide" onClick={async () => c.toast((await copyText(`/привязать ${g.invite_code}`)) ? "Команда скопирована, вставь её в чат" : `/привязать ${g.invite_code}`)}>Скопировать «/привязать {g.invite_code}»</button>
+          <span style={{ color: "var(--muted)", fontSize: 13 }}>«итог» в чате покажет, кто кому сколько должен.</span>
+        </>}
+      </div>}
       {create && <span style={{ color: "var(--muted)", fontSize: 13 }}>После создания получишь ссылку, чтобы позвать друзей.</span>}
       {err && <p className="err">{err}</p>}
       <button className="btn wide" disabled={busy} onClick={save}>{busy ? "Сохраняю…" : create ? "Создать группу" : "Сохранить"}</button>
@@ -480,7 +500,8 @@ export function InviteSheet({ c }: { c: Ctx }) {
   const kinds = inviteKinds();
   const [kind, setKind] = useState<LinkKind>(kinds[0] ?? "telegram");
   const link = inviteLink(c.g.invite_code, kind);
-  const where = kind === "vk" ? "ВКонтакте" : "Telegram";
+  const where = kind === "vk" ? "ВКонтакте" : kind === "max" ? "MAX" : "Telegram";
+  const na = (k: LinkKind) => (k === "vk" ? "ВКонтакте" : k === "max" ? "MAX" : "Telegram");
   const copy = async () => {
     if (await copyText(link)) c.toast("Ссылка скопирована");
     else {
@@ -494,12 +515,12 @@ export function InviteSheet({ c }: { c: Ctx }) {
       <SheetHead title="Позвать друзей" onClose={c.close} />
       <p style={{ margin: 0, color: "var(--muted)" }}>Отправь ссылку друзьям. Кто откроет её {kind === "vk" ? "во" : "в"} {where}, сразу попадёт в группу «{c.g.name}». Имя и аватарку подставит {where}.</p>
       {kinds.length > 1 && <div className="seg">
-        {kinds.map((k) => <button key={k} aria-pressed={kind === k} onClick={() => setKind(k)}>{k === "vk" ? "Для ВКонтакте" : "Для Telegram"}</button>)}
+        {kinds.map((k) => <button key={k} aria-pressed={kind === k} onClick={() => setKind(k)}>{kinds.length > 2 ? na(k) : "Для " + na(k)}</button>)}
       </div>}
       <div className="invite" id="invlink">{link}</div>
       {kind === platform
-        ? <button className="btn wide" onClick={() => share(link, `Присоединяйся к группе «${c.g.name}» в Скинемся — считаем общие траты`)}>Отправить {kind === "vk" ? "во ВКонтакте" : "в Telegram"}</button>
-        : <p className="note" style={{ margin: 0 }}>Друзья из {kind === "vk" ? "ВКонтакте" : "Telegram"} окажутся в той же группе, что и вы: траты и долги общие.</p>}
+        ? <button className="btn wide" onClick={() => share(link, `Присоединяйся к группе «${c.g.name}» в Скинемся — считаем общие траты`)}>Отправить {kind === "vk" ? "во ВКонтакте" : "в " + where}</button>
+        : <p className="note" style={{ margin: 0 }}>Друзья из {where} окажутся в той же группе, что и вы: траты и долги общие.</p>}
       <button className="btn ghost wide" onClick={copy}>Скопировать ссылку</button>
       <div className="field"><span className="flabel">Уже в группе · {c.g.members.length} чел.</span><div className="box">
         {c.g.members.map((m) => <div className="pp" key={m.id}><Avatar p={m} size="sm" me={c.me} /><span>{m.id === c.me ? `${m.first_name} (ты)` : m.first_name}</span></div>)}
@@ -544,7 +565,7 @@ export function HelpSheet({ c }: { c: Omit<Ctx, "g"> & { g?: Group } }) {
   if (sent) return (
     <>
       <SheetHead title="Спасибо!" onClose={c.close} />
-      <p style={{ margin: 0, color: "var(--muted)" }}>Сообщение ушло разработчику. {platform === "vk" ? (vkMessagesAvailable ? "Ответ придёт в сообщения ВКонтакте от сообщества «Скинемся»." : "Мы прочитаем его и учтём в следующих обновлениях.") : <>Ответ придёт от бота @{BOT_USERNAME} в личные сообщения.</>}</p>
+      <p style={{ margin: 0, color: "var(--muted)" }}>Сообщение ушло разработчику. {platform === "vk" ? (vkMessagesAvailable ? "Ответ придёт в сообщения ВКонтакте от сообщества «Скинемся»." : "Мы прочитаем его и учтём в следующих обновлениях.") : platform === "max" ? <>Ответ придёт от бота @{MAX_BOT} в MAX.</> : <>Ответ придёт от бота @{BOT_USERNAME} в личные сообщения.</>}</p>
       <button className="btn wide" onClick={c.close}>Готово</button>
     </>
   );

@@ -35,7 +35,41 @@ export async function vkSend(peerId: number, text: string, opts: { code?: string
   if (r.error) console.error("vk send", peerId, r.error.error_msg);
   return r;
 }
-export const isAdmin = (id: number) => id === ADMIN_ID || (ADMIN_VK_ID > 0 && id === -ADMIN_VK_ID);
+// ---------- MAX ----------
+// Пользователи MAX: id = MAX_OFFSET + id в MAX. Telegram — положительные id меньше 10^13, ВК — отрицательные.
+export const MAX_OFFSET = 4_000_000_000_000_000;
+export const MAX_BOT_TOKEN = Deno.env.get("MAX_BOT_TOKEN") ?? "";
+export const MAX_BOT = Deno.env.get("MAX_BOT") ?? ""; // имя бота в MAX без @ — для ссылок max.ru/<бот>?startapp=…
+export const ADMIN_MAX_ID = Number(Deno.env.get("ADMIN_MAX_ID") ?? "0");
+export const isMaxUser = (id: number) => id >= MAX_OFFSET;
+export const maxAppLink = (code?: string) => (MAX_BOT ? `https://max.ru/${MAX_BOT}?startapp${code ? "=" + code : ""}` : "");
+export async function maxApi<T = unknown>(method: "GET" | "POST" | "DELETE", path: string, body?: unknown, query: Record<string, string | number> = {}): Promise<{ ok: boolean; status: number; data?: T; error?: string }> {
+  if (!MAX_BOT_TOKEN) return { ok: false, status: 0, error: "no MAX_BOT_TOKEN" };
+  const qs = new URLSearchParams(Object.fromEntries(Object.entries(query).map(([k, v]) => [k, String(v)]))).toString();
+  try {
+    const r = await fetch(`https://platform-api2.max.ru${path}${qs ? "?" + qs : ""}`, {
+      method, headers: { Authorization: MAX_BOT_TOKEN, "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const text = await r.text();
+    let data: unknown = undefined; try { data = JSON.parse(text); } catch { data = text; }
+    if (!r.ok) console.error("max api", method, path, r.status, text.slice(0, 300));
+    return { ok: r.ok, status: r.status, data: data as T, error: r.ok ? undefined : text.slice(0, 300) };
+  } catch (e) { return { ok: false, status: -1, error: String(e) }; }
+}
+/** Сообщение в MAX: личка (user_id) или групповой чат (chat_id). code — кнопка «Открыть Скинемся» сразу в нужную группу. */
+export async function maxSend(to: { user_id?: number; chat_id?: number }, text: string, opts: { code?: string; button?: string; replyTo?: string; html?: boolean } = {}) {
+  const link = opts.code !== undefined ? maxAppLink(opts.code) : "";
+  const body: Record<string, unknown> = { text: text.slice(0, 4000) };
+  if (opts.html) body.format = "html";
+  if (link) body.attachments = [{ type: "inline_keyboard", payload: { buttons: [[{ type: "link", text: opts.button ?? "Открыть Скинемся", url: link }]] } }];
+  if (opts.replyTo) body.link = { type: "reply", mid: opts.replyTo };
+  const query: Record<string, number> = to.chat_id ? { chat_id: to.chat_id } : { user_id: to.user_id! };
+  let r = await maxApi("POST", "/messages", body, query);
+  if (!r.ok && opts.replyTo) { delete body.link; r = await maxApi("POST", "/messages", body, query); } // ответ на удалённое сообщение
+  return r;
+}
+
+export const isAdmin = (id: number) => id === ADMIN_ID || (ADMIN_VK_ID > 0 && id === -ADMIN_VK_ID) || (ADMIN_MAX_ID > 0 && id === MAX_OFFSET + ADMIN_MAX_ID);
 export const isVkUser = (id: number) => id < 0;
 export const vkAppLink = (code?: string) => (VK_APP_ID ? `https://vk.com/app${VK_APP_ID}${code ? "#" + code : ""}` : "");
 
@@ -49,6 +83,10 @@ export const htmlToText =(s: string) => s.replace(/<br\s*\/?>/g, "\n").replace(/
 
 /** Личное сообщение пользователю на его платформе. Telegram — от бота, ВК — от сообщества (если оно подключено и пользователь разрешил). */
 export async function notifyUser(id: number, html: string, button?: { text: string; code?: string }) {
+  if (isMaxUser(id)) {
+    const r = await maxSend({ user_id: id - MAX_OFFSET }, html, { html: true, code: button ? (button.code ?? "") : undefined, button: button?.text });
+    return r.ok;
+  }
   if (!isVkUser(id)) {
     const url = button?.code ? groupLink(button.code) : APP_LINK;
     const r = await tgApi("sendMessage", { chat_id: id, text: html, parse_mode: "HTML", disable_web_page_preview: true, ...(button ? { reply_markup: { inline_keyboard: [[{ text: button.text, url }]] } } : {}) });
@@ -225,10 +263,11 @@ export async function planText(groupId: string) {
 
 /** Сообщение в привязанные чаты: Telegram и/или беседу ВКонтакте */
 export async function postToLinkedChat(groupId: string, html: string, code?: string, onlyIfMirror = false) {
-  const { data: g } = await db.from("groups").select("tg_chat_id,vk_peer_id,invite_code,mirror_to_chat").eq("id", groupId).maybeSingle();
-  if (!g?.tg_chat_id && !g?.vk_peer_id) return;
+  const { data: g } = await db.from("groups").select("tg_chat_id,vk_peer_id,max_chat_id,invite_code,mirror_to_chat").eq("id", groupId).maybeSingle();
+  if (!g?.tg_chat_id && !g?.vk_peer_id && !g?.max_chat_id) return;
   if (onlyIfMirror && !g.mirror_to_chat) return;
   if (g.vk_peer_id) await vkSend(Number(g.vk_peer_id), htmlToText(html), { code: code ?? g.invite_code });
+  if (g.max_chat_id) await maxSend({ chat_id: Number(g.max_chat_id) }, html, { html: true, code: code ?? g.invite_code });
   if (!g.tg_chat_id) return;
   await tgApi("sendMessage", {
     chat_id: g.tg_chat_id, text: html, parse_mode: "HTML", disable_web_page_preview: true,

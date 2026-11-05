@@ -74,6 +74,7 @@ export function StatsSheet({ onClose }: { onClose: () => void }) {
 
       {u.platforms && <div className="field"><span className="flabel">Откуда пользователи</span><div className="box">
         <div className="pp"><span>Telegram</span><b className="num">{nf(u.platforms.telegram || 0)} · {pct(u.platforms.telegram || 0, u.total)}%</b></div>
+        {(u.platforms.max ?? 0) > 0 && <div className="pp"><span>MAX</span><b className="num">{nf(u.platforms.max || 0)} · {pct(u.platforms.max || 0, u.total)}%</b></div>}
         <div className="pp"><span>ВКонтакте</span><b className="num">{nf(u.platforms.vk || 0)} · {pct(u.platforms.vk || 0, u.total)}%{u.new_7d_vk ? <small> · +{u.new_7d_vk} за неделю</small> : null}</b></div>
         {u.consented !== undefined && <div className="pp"><span>Приняли политику / удалили данные</span><b className="num">{nf(u.consented)} / {nf(u.deleted ?? 0)}</b></div>}
       </div></div>}

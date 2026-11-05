@@ -14,3 +14,6 @@ export const APP_SHORT_NAME = import.meta.env.VITE_APP_SHORT_NAME || "app";
 export const VK_APP_ID = import.meta.env.VITE_VK_APP_ID || "";
 /** ID сообщества ВК, от имени которого приходят напоминания и ответы поддержки (необязательно) */
 export const VK_GROUP_ID = Number(import.meta.env.VITE_VK_GROUP_ID || 0);
+
+/** Имя бота в MAX (без @): приложение открывается по ссылке max.ru/<бот>?startapp=код */
+export const MAX_BOT = import.meta.env.VITE_MAX_BOT || "";

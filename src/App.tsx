@@ -6,7 +6,7 @@ import { CATALOG, compact, inBase, inBaseShort, loadRates, money, rateOf, ratesD
 import { StatsSheet } from "./stats";
 import { AddSheet, type Ctx, DetailSheet, GroupSheet, HelpSheet, InviteSheet, ScanSheet, type Sheet, defaultCurs } from "./sheets";
 import { firstName, haptic, inApp, initPlatform, openLink, startCode } from "./platform";
-import { BOT_USERNAME, VK_APP_ID } from "./config";
+import { BOT_USERNAME, MAX_BOT, VK_APP_ID } from "./config";
 import { Avatar, Fly, GroupImg, Ico, catName, dayName, guessCat, relDay, richText, todayISO, tripDates } from "./ui";
 
 type Tab = "groups" | "feed" | "balances" | "chat";
@@ -108,9 +108,10 @@ export default function App() {
     <main><div className="wrap"><div className="center">
       <img className="logo" src={`${import.meta.env.BASE_URL}logo.png`} alt="Скинемся" />
       <h2>Скинемся</h2>
-      <p>Общие траты в поездках с друзьями. Приложение открывается внутри Telegram или ВКонтакте — там тебя узнают по аккаунту.</p>
+      <p>Общие траты в поездках с друзьями. Приложение открывается внутри Telegram, ВКонтакте или MAX — там тебя узнают по аккаунту.</p>
       {VK_APP_ID && <a className="btn" href={`https://vk.com/app${VK_APP_ID}${location.search.includes("join=") ? "#" + new URLSearchParams(location.search).get("join") : ""}`}>Открыть во ВКонтакте</a>}
       {BOT_USERNAME && <a className="btn ghost" href={`https://t.me/${BOT_USERNAME}/app`}>Открыть в Telegram</a>}
+      {MAX_BOT && <a className="btn ghost" href={`https://max.ru/${MAX_BOT}?startapp`}>Открыть в MAX</a>}
     </div></div></main>
   );
   if (!API_URL) return <Center title="Сервер ещё не подключён" text="В сборке не задан адрес серверной функции. Добавь VITE_API_URL в настройки сборки." />;

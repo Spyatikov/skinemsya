@@ -7,9 +7,10 @@ import { scanReceipt, aiEnabled } from "./ai.ts";
 import { handleUpdate, setupBot, webhookSecret } from "./bot.ts";
 import { runReminders } from "./reminders.ts";
 import { handleVkCallback, setupVkCallback } from "./vkbot.ts";
+import { handleMaxUpdate, maxWebhookSecret, setupMaxBot } from "./maxbot.ts";
 import {
   ADMIN_ID, BOT_TOKEN, BOT_USERNAME, db, esc, fail, HttpError, isAdmin, isVkUser, money as fmtMoney, notifyUser, postToLinkedChat, tgApi,
-  ADMIN_VK_ID, VK_APP_ID, VK_APP_SECRET, VK_GROUP_ID, vkApi, vkSend,
+  ADMIN_VK_ID, VK_APP_ID, VK_APP_SECRET, VK_GROUP_ID, vkApi, vkSend, MAX_BOT_TOKEN, MAX_OFFSET, isMaxUser, maxSend,
 } from "./shared.ts";
 
 const CORS = {
@@ -60,7 +61,7 @@ export async function vkSignOk(query: string, secret: string, sign: string) {
   return false;
 }
 // Подпись: все параметры vk_* по алфавиту, значения через encodeURIComponent, HMAC-SHA256 защищённым ключом, base64url.
-type Who = { user: TgUser; startParam?: string; platform: "telegram" | "vk" };
+type Who = { user: TgUser; startParam?: string; platform: "telegram" | "vk" | "max" };
 async function verifyVK(query: string, profile: Record<string, unknown> | null): Promise<Who> {
   if (!VK_APP_SECRET) fail(500, "На сервере не задан VK_APP_SECRET");
   const params = new URLSearchParams(query);
@@ -78,6 +79,28 @@ async function verifyVK(query: string, profile: Record<string, unknown> | null):
   return {
     platform: "vk",
     user: { id: -vkId, first_name: str(profile?.first_name, 64), last_name: str(profile?.last_name, 64) || undefined, photo_url: /^https:\/\//.test(photo) ? photo : undefined },
+  };
+}
+
+// ---------- проверка запуска из MAX ----------
+// Та же схема, что у Telegram: HMAC-SHA256 с ключом HMAC("WebAppData", токен бота).
+async function verifyMax(raw: string): Promise<Who> {
+  if (!MAX_BOT_TOKEN) fail(500, "На сервере не задан MAX_BOT_TOKEN");
+  const params = new URLSearchParams(raw);
+  const hash = params.get("hash");
+  if (!hash) fail(401, "Открой приложение из MAX");
+  params.delete("hash");
+  const check = [...params.entries()].map(([k, v]) => `${k}=${v}`).sort().join("\n");
+  const secret = await hmac(enc.encode("WebAppData"), MAX_BOT_TOKEN);
+  if (hex(await hmac(secret, check)) !== hash) fail(401, "Подпись MAX не сошлась");
+  let authDate = Number(params.get("auth_date") ?? 0);
+  if (authDate > 1e12) authDate /= 1000; // на случай миллисекунд
+  if (authDate && Date.now() / 1000 - authDate > 7 * 24 * 3600) fail(401, "Сессия устарела, перезапусти приложение");
+  const u = JSON.parse(params.get("user") ?? "null") as { id: number; first_name?: string; last_name?: string; username?: string; photo_url?: string } | null;
+  if (!u?.id) fail(401, "Нет данных пользователя MAX");
+  return {
+    platform: "max", startParam: params.get("start_param") ?? undefined,
+    user: { id: MAX_OFFSET + u!.id, first_name: u!.first_name || "Друг из MAX", last_name: u!.last_name || undefined, username: u!.username || undefined, photo_url: u!.photo_url || undefined },
   };
 }
 
@@ -166,6 +189,19 @@ Deno.serve(async (req) => {
     if (!cfg?.value || url.searchParams.get("key") !== cfg.value) return new Response("forbidden", { status: 403 });
     return json(await setupVkCallback(`${Deno.env.get("SUPABASE_URL")}/functions/v1/api`));
   }
+  // подписка бота MAX на события
+  if (url.searchParams.get("cron") === "maxsetup") {
+    const { data: cfg } = await db.from("app_config").select("value").eq("key", "cron_key").maybeSingle();
+    if (!cfg?.value || url.searchParams.get("key") !== cfg.value) return new Response("forbidden", { status: 403 });
+    return json(await setupMaxBot(`${Deno.env.get("SUPABASE_URL")}/functions/v1/api`));
+  }
+  // вебхук MAX
+  const maxSecret = req.headers.get("x-max-bot-api-secret");
+  if (maxSecret !== null) {
+    if (!MAX_BOT_TOKEN || maxSecret !== await maxWebhookSecret()) return new Response("forbidden", { status: 403 });
+    try { await handleMaxUpdate(await req.json()); } catch (e) { console.error("max update failed", e); }
+    return new Response("ok");
+  }
   // вебхук Telegram
   const tgSecret = req.headers.get("x-telegram-bot-api-secret-token");
   if (tgSecret !== null) {
@@ -179,8 +215,10 @@ Deno.serve(async (req) => {
     if (typeof body?.type === "string" && Number(body?.group_id) === VK_GROUP_ID && !body.action) {
       return new Response(await handleVkCallback(body), { headers: { "content-type": "text/plain" } });
     }
-    const { initData, vk, profile, action, ...p } = body;
-    const who: Who = vk ? await verifyVK(String(vk), profile ?? null) : { ...(await verifyInitData(String(initData ?? ""))), platform: "telegram" };
+    const { initData, vk, max, profile, action, ...p } = body;
+    const who: Who = vk ? await verifyVK(String(vk), profile ?? null)
+      : max ? await verifyMax(String(max))
+      : { ...(await verifyInitData(String(initData ?? ""))), platform: "telegram" };
     const { user, startParam } = who;
     const me = user.id;
     if (action === "load" && p.since) {
@@ -324,6 +362,14 @@ Deno.serve(async (req) => {
       }
       case "unlinkChat": {
         await mustBeMember(p.id, me);
+        if (p.kind === "max") {
+          const { data: g } = await db.from("groups").select("max_chat_id,name").eq("id", p.id).single();
+          if (g?.max_chat_id) {
+            await maxSend({ chat_id: Number(g.max_chat_id) }, `Чат отключён от группы «${g.name}». Траты отсюда больше не записываются.`);
+            await db.from("groups").update({ max_chat_id: null, max_chat_title: null }).eq("id", p.id);
+          }
+          return json({ ok: true });
+        }
         if (p.kind === "vk") {
           const { data: g } = await db.from("groups").select("vk_peer_id,name").eq("id", p.id).single();
           if (g?.vk_peer_id) {
@@ -345,7 +391,8 @@ Deno.serve(async (req) => {
         const ctx = (p.context ?? {}) as Record<string, string>;
         const { data: fb } = await db.from("feedback").insert({ user_id: me, group_id: p.group_id ?? null, text, context: ctx }).select("id").single();
         const whoName = `${esc(user.first_name)}${user.last_name ? " " + esc(user.last_name) : ""}${user.username ? ` (@${esc(user.username)})` : ""}`;
-        const whoLink = isVkUser(me) ? `<a href="https://vk.com/id${-me}">${whoName}</a> · ВКонтакте` : `<a href="tg://user?id=${me}">${whoName}</a> · <code>${me}</code>`;
+        const whoLink = isMaxUser(me) ? `${whoName} · MAX <code>${me - MAX_OFFSET}</code>`
+          : isVkUser(me) ? `<a href="https://vk.com/id${-me}">${whoName}</a> · ВКонтакте` : `<a href="tg://user?id=${me}">${whoName}</a> · <code>${me}</code>`;
         const head = `🆘 <b>Обращение #${fb?.id ?? ""}</b>\nОт: ${whoLink}\n` +
           (ctx.group ? `Группа: ${esc(ctx.group)}\n` : "") + (ctx.platform ? `Устройство: ${esc(ctx.platform)}\n` : "") +
           `\n${esc(text)}\n\n<i>Ответь на это сообщение — ответ уйдёт автору.</i>`;
